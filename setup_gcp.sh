@@ -35,7 +35,9 @@ gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
   firestore.googleapis.com \
-  storage.googleapis.com
+  storage.googleapis.com \
+  texttospeech.googleapis.com
+
 
 # 3. 检查并创建 Cloud Storage 桶 (供后端存放原图和去痕图)
 BUCKET_NAME="$PROJECT_ID-images"

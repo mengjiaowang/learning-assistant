@@ -212,7 +212,24 @@ class ApiService {
       return null;
     }
   }
+
+  Future<String?> createTtsTicket(String questionId) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/questions/$questionId/tts/ticket',
+      );
+      if (response.statusCode == 200) {
+        return response.data["ticket_id"];
+      }
+      return null;
+    } catch (e) {
+      print('Create tts ticket error: $e');
+      return null;
+    }
+  }
+
   Future<bool> batchRestoreQuestions(List<String> questionIds) async {
+
     try {
       final response = await _dio.post(
         '/api/v1/questions/batch/restore',

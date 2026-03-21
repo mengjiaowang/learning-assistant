@@ -8,6 +8,8 @@ import 'login_screen.dart';
 import 'recycle_bin_screen.dart';
 import 'package:flutter_math_fork/flutter_math.dart'; // 导入公式渲染包
 import 'package:url_launcher/url_launcher.dart';
+import 'package:audioplayers/audioplayers.dart'; // 新增：语音播报
+
 
 // ==========================================
 // 自定义混合文本渲染控件 (支持行内 $...$ 公式)
@@ -70,7 +72,12 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final AudioPlayer _audioPlayer = AudioPlayer(); // 新增：TTS 播放器
+  bool _isPlayingTts = false; // 新增：播放状态
+  String? _currentPlayingQid; // 新增：当前播放的错题 ID
+
   List<QuestionModel> _questions = [];
+
   bool _isLoading = true;
   
   // 新增科目过滤状态
@@ -91,6 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    _audioPlayer.dispose(); // 新增：释放播放器
     widget.refreshNotifier?.removeListener(_loadData); // 销毁监听
     super.dispose();
   }
@@ -503,7 +511,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const Divider(height: 30),
                       
-                      const Text('🔍 AI 详解与步骤：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('🔍 AI 详解与步骤：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
+                          StatefulBuilder(
+                            builder: (context, setButtonState) {
+                              final isCurrent = _currentPlayingQid == item.id;
+                              final isPlaying = isCurrent && _isPlayingTts;
+                              
+                              return IconButton(
+                                icon: isPlaying 
+                                    ? const SpinKitRing(color: Colors.green, size: 24, lineWidth: 2) 
+                                    : const Icon(Icons.volume_up_rounded, color: Colors.green, size: 26),
+                                tooltip: '语音朗读解析',
+                                onPressed: isPlaying ? () async {
+                                  await _audioPlayer.stop();
+                                  setButtonState(() {
+                                    _isPlayingTts = false;
+                                    _currentPlayingQid = null;
+                                  });
+                                } : () async {
+                                  setButtonState(() {
+                                    _currentPlayingQid = item.id;
+                                    _isPlayingTts = true;
+                                  });
+                                  final ticketId = await apiService.createTtsTicket(item.id);
+                                  if (ticketId != null) {
+                                      final url = '${ApiService.baseUrl}/api/v1/questions/tts?ticket_id=$ticketId';
+                                      try {
+                                          await _audioPlayer.play(UrlSource(url));
+                                          _audioPlayer.onPlayerComplete.first.then((_) {
+                                              if (context.mounted) {
+                                                  setButtonState(() {
+                                                      _isPlayingTts = false;
+                                                      _currentPlayingQid = null;
+                                                  });
+                                              }
+                                          });
+                                      } catch (e) {
+                                           print("Play error: $e");
+                                           if (context.mounted) {
+                                               setButtonState(() {
+                                                   _isPlayingTts = false;
+                                                   _currentPlayingQid = null;
+                                               });
+                                           }
+                                      }
+                                  } else {
+                                      if (context.mounted) {
+                                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音生成失败，请稍后重试')));
+                                         setButtonState(() {
+                                             _isPlayingTts = false;
+                                             _currentPlayingQid = null;
+                                         });
+                                      }
+                                  }
+                                },
+                              );
+                            }
+                          ),
+                        ],
+                      ),
+
                       const SizedBox(height: 8),
                       if (item.analysisSteps.isEmpty) const Text('暂无解析'),
                       ...item.analysisSteps.map((step) => Padding(
@@ -567,7 +637,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      _audioPlayer.stop();
+      _isPlayingTts = false;
+      _currentPlayingQid = null;
+    });
+
   }
 
   Color _getTagColor(String tag) {

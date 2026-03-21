@@ -173,7 +173,77 @@ async def list_questions(
          
     return {"questions": result}
 
+@router.get("/tts")
+async def get_tts(
+    ticket_id: str
+):
+    """
+    根据 Ticket ID 调用 Google Cloud TTS 并流式返回 MP3
+    """
+    ticket_ref = db.collection("tts_tickets").document(ticket_id).get()
+    if not ticket_ref.exists:
+        raise HTTPException(status_code=404, detail="该凭证无效或已被消费")
+    ticket_data = ticket_ref.to_dict()
+    
+    import datetime
+    try:
+        expires_at = datetime.datetime.fromisoformat(ticket_data.get("expires_at"))
+        if datetime.datetime.utcnow() > expires_at:
+            raise HTTPException(status_code=410, detail="该凭证已过期，请重新播报")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="凭证格式异常")
+        
+    question_id = ticket_data.get("question_id")
+    doc = db.collection("questions").document(question_id).get()
+    if not doc.exists:
+         raise HTTPException(status_code=404, detail="错题未找到")
+    q = doc.to_dict()
+    
+    # 拼接文本：解析步骤 + 易错点
+    steps = q.get("analysis_steps", [])
+    trap = q.get("trap_warning", "")
+    
+    # 移除 LaTeX 符号 $ 防止 TTS 发出奇怪的声音
+    def clean_text(text):
+         if not text: return ""
+         return text.replace("$", "")
+         
+    text_to_speak = "下面是这道题的分步解析。"
+    if steps:
+        for i, step in enumerate(steps, 1):
+            text_to_speak += f"第 {i} 步：{clean_text(step)}。"
+    else:
+        text_to_speak += "暂无分步解析。"
+        
+    if trap:
+        text_to_speak += f"易错警示：{clean_text(trap)}。"
+        
+    # 调用 Google Cloud TTS API
+    from google.cloud import texttospeech
+    try:
+        client = texttospeech.TextToSpeechClient()
+        synthesis_input = texttospeech.SynthesisInput(text=text_to_speak)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="cmn-CN",
+            name="cmn-CN-Standard-A"  # 标准女声
+        )
+
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+        # 单次消费 ticket
+        db.collection("tts_tickets").document(ticket_id).delete()
+        return Response(content=response.audio_content, media_type="audio/mpeg")
+    except Exception as e:
+         # 容错：即使 TTS 失败清理 ticket 防止堆积
+         db.collection("tts_tickets").document(ticket_id).delete()
+         raise HTTPException(status_code=500, detail=f"TTS 生成异常: {e}")
+
 @router.get("/{question_id}")
+
 async def get_question_detail(
     question_id: str,
     current_user: User = Depends(get_current_user)
@@ -357,6 +427,42 @@ async def batch_permanent_delete_questions(
     return {"message": f"成功永久删除 {count} 道错题"}
 
 # ==========================================
+# 5. TTS 语音接口 (Text-to-Speech)
+# ==========================================
+
+from fastapi.responses import Response
+
+@router.post("/{question_id}/tts/ticket")
+async def create_tts_ticket(
+    question_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    签发用于播放 TTS 的极短生命期一次性凭证（Ticket ID）。
+    """
+    import uuid, datetime
+    # 验证 question_id 所属权
+    doc_ref = db.collection("questions").document(question_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="错题未找到")
+    data = doc.to_dict()
+    if data["user_id"] != current_user.username:
+        raise HTTPException(status_code=403, detail="无权操作该错题")
+        
+    ticket_id = str(uuid.uuid4())
+    ticket_payload = {
+        "user_id": current_user.username,
+        "question_id": question_id,
+        "expires_at": (datetime.datetime.utcnow() + datetime.timedelta(minutes=3)).isoformat()
+    }
+    db.collection("tts_tickets").document(ticket_id).set(ticket_payload)
+    return {"ticket_id": ticket_id}
+
+
+# ==========================================
+
+
 # 4. 试卷生成与导出接口
 # ==========================================
 
