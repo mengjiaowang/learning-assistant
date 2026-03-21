@@ -446,9 +446,8 @@ async def generate_paper(
 
     for index, q in enumerate(questions_data, 1):
         image_html = ""
-        # 覆写流流式路由
-        if q.get("image_original"):
-            image_html = f'<div style="text-align:center;"><img class="question-image" src="{q.get("image_original")}" /></div>'
+        # 生成的题目不附带原图照片，保持干净文本版式
+        # if q.get("image_original"): ...
 
         options_html = ""
         if q.get("options"):
@@ -480,7 +479,7 @@ async def generate_paper(
     if show_answers:
          answers_html += "</div>"
 
-    final_html = html_content.replace("[QUESTIONS_LIST]", questions_html).replace("[ANSWERS_LIST]", answers_html).replace("[DATE_NOW]", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    final_html = html_content.replace("[QUESTIONS_LIST]", questions_html).replace("[ANSWERS_LIST]", answers_html).replace("[DATE_NOW]", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     
     from fastapi import Response
     return Response(content=final_html, media_type="text/html")
