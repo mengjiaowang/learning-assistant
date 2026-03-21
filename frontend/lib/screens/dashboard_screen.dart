@@ -9,6 +9,7 @@ import 'recycle_bin_screen.dart';
 import 'package:flutter_math_fork/flutter_math.dart'; // 导入公式渲染包
 import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart'; // 新增：语音播报
+import '../main.dart'; // 引入 themeNotifier
 
 
 // ==========================================
@@ -222,9 +223,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('王铮的错题本'), // 已更新
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(themeNotifier.value == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
+            tooltip: '切换护眼模式',
+            onPressed: () {
+              themeNotifier.value = themeNotifier.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+              setState(() {}); // 刷新当前页图标
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新列表',
@@ -280,7 +287,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                    Text('已选择 ${_selectedQuestionIds.length} 道错题', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                    ElevatedButton.icon(
-                     style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, elevation: 0),
+                     style: ElevatedButton.styleFrom(elevation: 0),
                      icon: const Icon(Icons.picture_as_pdf),
                      label: const Text('预览 A/B 试卷视图'),
                      onPressed: _exportPaper,
@@ -290,8 +297,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           : null,
       body: _isLoading
-          ? const Center(
-              child: SpinKitFadingCircle(color: Colors.indigo, size: 50),
+          ? Center(
+              child: SpinKitFadingCircle(color: Theme.of(context).primaryColor, size: 50),
             )
           : Column(
               children: [
@@ -318,10 +325,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             ),
                             if (_isLoadingMore)
-                              const SliverToBoxAdapter(
+                              SliverToBoxAdapter(
                                 child: Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Center(child: SpinKitFadingCircle(color: Colors.indigo, size: 25)),
+                                  padding: const EdgeInsets.all(12),
+                                  child: Center(child: SpinKitFadingCircle(color: Theme.of(context).primaryColor, size: 25)),
                                 ),
                               ),
                             if (!_hasMore && _questions.isNotEmpty)
@@ -367,7 +374,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           elevation: isSelected ? 8 : 4,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: isSelected ? const BorderSide(color: Colors.indigo, width: 2) : BorderSide.none,
+            side: isSelected ? BorderSide(color: Theme.of(context).primaryColor, width: 2) : BorderSide.none,
           ),
           child: InkWell(
             onTap: _isSelectionMode
@@ -393,7 +400,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           : (item.imageBlank.isNotEmpty ? item.imageBlank : item.imageOriginal),
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => const Center(child: SpinKitWave(color: Colors.indigo, size: 20)),
+                      placeholder: (context, url) => Center(child: SpinKitWave(color: Theme.of(context).primaryColor, size: 20)),
                       errorWidget: (context, url, error) => Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
                     ),
                   ),
@@ -405,7 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       Text(
                         item.knowledgePoint,
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor),
                       ),
                       const SizedBox(height: 4),
                       if (item.tags.isNotEmpty)
@@ -453,7 +460,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             right: 4,
             child: Checkbox(
               value: isSelected,
-              activeColor: Colors.indigo,
+              activeColor: Theme.of(context).primaryColor,
               checkColor: Colors.white,
               shape: const CircleBorder(),
               onChanged: (val) {
@@ -484,9 +491,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (context, setModalState) {
             return Container(
               height: MediaQuery.of(context).size.height * 0.85,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
               ),
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -500,7 +507,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('📌 题目详情', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.indigo)),
+                            Text('📌 题目详情', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Theme.of(context).primaryColor)),
                             const SizedBox(height: 4),
                             Text('录入时间: ${_formatTimestamp(item.createdAt)}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                           ],
@@ -527,7 +534,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       MathText(item.questionText, style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 12),
                       if (item.imageOriginal.isNotEmpty) ...[
-                        const Text('🖼️ 题目原图：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                        Text('🖼️ 题目原图：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).primaryColor)),
                         const SizedBox(height: 8),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
@@ -543,7 +550,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                       const Divider(height: 20),
                       
-                      const Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                      Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).primaryColor)),
                       const SizedBox(height: 8),
                       StatefulBuilder(  // 局部刷新标签勾选状态
                         builder: (context, setModalState) {
@@ -745,7 +752,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       '数学': Colors.blue,
       '英语': Colors.green,
     };
-    return colorMap[tag] ?? Colors.indigo; 
+    return colorMap[tag] ?? Theme.of(context).primaryColor; 
   }
 
   Widget _buildFilterBar() {
@@ -793,7 +800,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: Icon(
               _selectedDateRange != null ? Icons.today_rounded : Icons.calendar_month_outlined,
-              color: _selectedDateRange != null ? Colors.indigo : Colors.grey[600],
+              color: _selectedDateRange != null ? Theme.of(context).primaryColor : Colors.grey[600],
             ),
             tooltip: '按入库时间筛选',
             onPressed: () async {

@@ -156,8 +156,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('拍照录入错题'),
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
         actions: [
           if (_capturedImageBytes != null)
              IconButton(
@@ -338,7 +336,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
           ? FloatingActionButton(
               onPressed: _isUploading ? null : _takePicture,
               backgroundColor: Colors.white,
-              child: const Icon(Icons.camera_alt, color: Colors.indigo, size: 30),
+              child: Icon(Icons.camera_alt, color: Theme.of(context).primaryColor, size: 30),
             )
           : Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -382,10 +380,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
           height: 30,
           alignment: Alignment.center,
           decoration: const BoxDecoration(color: Colors.transparent),
-          child: const CircleAvatar(
+          child: CircleAvatar(
             radius: 8,
             backgroundColor: Colors.white,
-            child: Icon(Icons.circle, size: 10, color: Colors.indigo),
+            child: Icon(Icons.circle, size: 10, color: Theme.of(context).primaryColor),
           ),
         ),
       ),

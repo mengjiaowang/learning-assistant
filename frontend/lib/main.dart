@@ -6,31 +6,37 @@ import 'screens/dashboard_screen.dart';
 import 'screens/capture_screen.dart';
 import 'services/api_service.dart';
 
+import 'theme.dart'; // 引入主题
+
 List<CameraDescription> cameras = [];
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+// 全局主题切换信号
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 不再在 main() 中全局初始化摄像头，避免一进 App（包括登录页）就申请浏览器权限
   runApp(const MistakeMentorApp());
 }
-
 
 class MistakeMentorApp extends StatelessWidget {
   const MistakeMentorApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      title: 'MistakeMentor',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'Roboto',
-        primarySwatch: Colors.indigo,
-        useMaterial3: true,
-      ),
-      home: const RootScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'MistakeMentor',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightEyeCare(), // 使用护眼亮色
+          darkTheme: AppTheme.darkEyeCare(), // 使用护眼暗色
+          themeMode: themeMode,
+          home: const RootScreen(),
+        );
+      },
     );
   }
 }
@@ -66,7 +72,7 @@ class _RootScreenState extends State<RootScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: Colors.indigo)),
+        body: Center(child: CircularProgressIndicator()),
       );
     }
     return _isAuthenticated ? const MainNavigationShell() : const LoginScreen();
@@ -101,7 +107,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        selectedItemColor: Colors.indigo,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: '面板'),
@@ -126,7 +131,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 builder: (context) => const CaptureScreen(),
               ),
             );
-            // 如果成功上传，自动刷新
             if (result == true) {
                _refreshNotifier.value = !_refreshNotifier.value;
             }
@@ -136,9 +140,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
              }
           }
         },
-
-        backgroundColor: Colors.indigo,
-        child: const Icon(Icons.camera_alt, color: Colors.white, size: 28),
+        child: const Icon(Icons.camera_alt, size: 28),
       ),
     );
   }

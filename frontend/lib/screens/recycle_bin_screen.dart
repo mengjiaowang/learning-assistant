@@ -50,8 +50,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('回收站'),
-        backgroundColor: Colors.grey[800],
-        foregroundColor: Colors.white,
         actions: [
           if (_deletedQuestions.isNotEmpty)
             TextButton(
@@ -87,7 +85,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: SpinKitFadingCircle(color: Colors.indigo, size: 50))
+          ? Center(child: SpinKitFadingCircle(color: Theme.of(context).primaryColor, size: 50))
           : _deletedQuestions.isEmpty
               ? const Center(child: Text('回收站空空如也~', style: TextStyle(color: Colors.grey, fontSize: 16)))
               : ListView.builder(
@@ -136,7 +134,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                   width: 50,
                                   height: 50,
                                   fit: BoxFit.cover,
-                                  placeholder: (_, __) => const SpinKitWave(color: Colors.indigo, size: 10),
+                                  placeholder: (_, __) => SpinKitWave(color: Theme.of(context).primaryColor, size: 10),
                                   errorWidget: (_, __, ___) => const Icon(Icons.image_not_supported),
                                 ),
                               ),
