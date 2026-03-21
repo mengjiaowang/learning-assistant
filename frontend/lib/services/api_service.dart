@@ -6,6 +6,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import '../models/question_model.dart';
+import 'package:flutter/material.dart';
+import '../screens/login_screen.dart';
+import '../main.dart';
 
 class ApiService {
   static const String baseUrl = kDebugMode ? 'http://127.0.0.1:8000' : '';
@@ -22,6 +25,22 @@ class ApiService {
           options.headers['Authorization'] = 'Bearer $token';
         }
         return handler.next(options);
+      },
+      onError: (DioException e, handler) async {
+        if (e.response?.statusCode == 401 && e.requestOptions.path != '/api/v1/auth/login') {
+          await _storage.delete(key: 'jwt_token');
+          final context = navigatorKey.currentContext;
+          if (context != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('登录已过期，请重新登录！')),
+            );
+          }
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+        return handler.next(e);
       },
     ));
   }

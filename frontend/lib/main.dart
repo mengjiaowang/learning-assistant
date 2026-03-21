@@ -7,6 +7,7 @@ import 'screens/capture_screen.dart';
 import 'services/api_service.dart';
 
 List<CameraDescription> cameras = [];
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,7 @@ class MistakeMentorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'MistakeMentor',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
