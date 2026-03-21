@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form
@@ -95,7 +95,7 @@ async def upload_question(
                 img = img.crop((left, top, right, bottom))
                 
             buf = io.BytesIO()
-            img.save(buf, format=img.format or 'JPEG')
+            img.save(buf, format=img.format or 'JPEG', quality=95, subsampling=0)
             contents = buf.getvalue()
         except Exception as e:
             print(f"[Warning] 图片处理（镜像/旋转/裁剪）失败: {e}")
@@ -126,12 +126,42 @@ async def upload_question(
 
     ai_result = ai_service.ocr_and_analyze(contents, existing_tags=existing_tags)
     
+    # --- 新增：智能图表提取 + 局部Imagen去手写流水线 ---
+    diagram_bbox = ai_result.get("diagram_bbox")
+    url_diagram_clean = None
+    if diagram_bbox and isinstance(diagram_bbox, list) and len(diagram_bbox) == 4:
+         try:
+              from PIL import Image
+              orig_img = Image.open(io.BytesIO(contents))
+              W, H = orig_img.size
+              ymin, xmin, ymax, xmax = diagram_bbox
+              left = int(max(0.0, min(1.0, xmin)) * W)
+              top = int(max(0.0, min(1.0, ymin)) * H)
+              right = int(max(0.0, min(1.0, xmax)) * W)
+              bottom = int(max(0.0, min(1.0, ymax)) * H)
+              
+              if right > left + 5 and bottom > top + 5: # 剔除畸形噪点
+                   cropped_img = orig_img.crop((left, top, right, bottom))
+                   crop_buf = io.BytesIO()
+                   cropped_img.save(crop_buf, format='JPEG', quality=95, subsampling=0)
+                   cropped_bytes = crop_buf.getvalue()
+                   
+                   # 单独叫 Imagen 除尘去手写
+                   clean_bytes = ai_service.remove_handwriting(cropped_bytes)
+                   
+                   # 上传 GCS 自主路径
+                   upload_to_gcs(clean_bytes, f"diagram/{question_uuid}.jpg")
+                   url_diagram_clean = f"/api/v1/questions/{question_uuid}/diagram"
+         except Exception as e:
+              print(f"[Warning] BBox 图象切片与去手写流水线失败: {e}")
+    
     # [Step 3] 编排存入 Firestore
     question_doc = {
         "id": question_uuid,
         "user_id": current_user.username,
         "image_original": url_original,
         "image_blank": url_blank,
+        "image_diagram_clean": url_diagram_clean, # 新增干净配图插图映射
         "question_text": ai_result.get("question_text", ""),
         "options": ai_result.get("options"),
         "knowledge_point": ai_result.get("knowledge_point", "未对齐考点"),
@@ -141,7 +171,7 @@ async def upload_question(
         "mastery_status": "unmastered", # 默认未掌握
         "is_deleted": False, # 初始化软删除状态为 False
         "tags": ai_result.get("suggested_tags", []), # 使用 AI 推荐的默认标签归类
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone(timedelta(hours=8))).isoformat()
     }
     
     db.collection("questions").document(question_uuid).set(question_doc)
@@ -153,27 +183,102 @@ async def list_questions(
     current_user: User = Depends(get_current_user),
     knowledge_point: Optional[str] = None,
     tag: Optional[str] = None, # 新增：支持标签过滤
-    is_deleted: bool = False # 新增：默认不查询回收站
+    is_deleted: bool = False, # 新增：默认不查询回收站
+    limit: int = 24, # 新增：分页大小
+    offset: int = 0  # 新增：偏移量
 ):
-    """获取错题列表，支持考点及标签筛选"""
-    query = db.collection("questions").where("user_id", "==", current_user.username)
+    """获取错题列表，支持分页、考点及标签筛选"""
+    query = db.collection("questions")\
+              .where("user_id", "==", current_user.username)\
+              .where("is_deleted", "==", is_deleted)
+              
     if knowledge_point:
         query = query.where("knowledge_point", "==", knowledge_point)
     if tag:
         # 使用 Firestore 阵列包含语法过滤
         query = query.where("tags", "array_contains", tag)
     
-    docs = query.stream()
-    result = []
-    for doc in docs:
-         data = doc.to_dict()
-         # 兼容性设计：如果历史数据没有 is_deleted 字段，默认就是 False（未删除）
-         if data.get("is_deleted", False) == is_deleted:
-              result.append(data)
+    # 按照时间降序排序，并分页截断 (完全委派给 Firestore 执行)
+    docs = query.order_by("created_at", direction=firestore.Query.DESCENDING)\
+                .offset(offset)\
+                .limit(limit)\
+                .stream()
+
+    result = [doc.to_dict() for doc in docs]
          
     return {"questions": result}
 
+@router.get("/tts")
+async def get_tts(
+    ticket_id: str
+):
+    """
+    根据 Ticket ID 调用 Google Cloud TTS 并流式返回 MP3
+    """
+    ticket_ref = db.collection("tts_tickets").document(ticket_id).get()
+    if not ticket_ref.exists:
+        raise HTTPException(status_code=404, detail="该凭证无效或已被消费")
+    ticket_data = ticket_ref.to_dict()
+    
+    import datetime
+    try:
+        expires_at = datetime.datetime.fromisoformat(ticket_data.get("expires_at"))
+        if datetime.datetime.utcnow() > expires_at:
+            raise HTTPException(status_code=410, detail="该凭证已过期，请重新播报")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="凭证格式异常")
+        
+    question_id = ticket_data.get("question_id")
+    doc = db.collection("questions").document(question_id).get()
+    if not doc.exists:
+         raise HTTPException(status_code=404, detail="错题未找到")
+    q = doc.to_dict()
+    
+    # 拼接文本：解析步骤 + 易错点
+    steps = q.get("analysis_steps", [])
+    trap = q.get("trap_warning", "")
+    
+    # 移除 LaTeX 符号 $ 防止 TTS 发出奇怪的声音
+    def clean_text(text):
+         if not text: return ""
+         return text.replace("$", "")
+         
+    text_to_speak = "下面是这道题的分步解析。"
+    if steps:
+        for i, step in enumerate(steps, 1):
+            text_to_speak += f"第 {i} 步：{clean_text(step)}。"
+    else:
+        text_to_speak += "暂无分步解析。"
+        
+    if trap:
+        text_to_speak += f"易错警示：{clean_text(trap)}。"
+        
+    # 调用 Google Cloud TTS API
+    from google.cloud import texttospeech
+    try:
+        client = texttospeech.TextToSpeechClient()
+        synthesis_input = texttospeech.SynthesisInput(text=text_to_speak)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="cmn-CN",
+            name="cmn-CN-Standard-A"  # 标准女声
+        )
+
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+        # 单次消费 ticket
+        db.collection("tts_tickets").document(ticket_id).delete()
+        return Response(content=response.audio_content, media_type="audio/mpeg")
+    except Exception as e:
+         # 容错：即使 TTS 失败清理 ticket 防止堆积
+         db.collection("tts_tickets").document(ticket_id).delete()
+         raise HTTPException(status_code=500, detail=f"TTS 生成异常: {e}")
+
 @router.get("/{question_id}")
+
 async def get_question_detail(
     question_id: str,
     current_user: User = Depends(get_current_user)
@@ -262,6 +367,20 @@ async def get_question_image(question_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"拉取图片失败: {e}")
 
+@router.get("/{question_id}/diagram")
+async def get_question_diagram(question_id: str):
+    """流式代理插图拉取去手写干净配图"""
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        # 从 diagram/ 路径加载
+        blob = bucket.blob(f"diagram/{question_id}.jpg")
+        bytes_data = blob.download_as_bytes()
+        return Response(content=bytes_data, media_type="image/jpeg")
+    except NotFound:
+        raise HTTPException(status_code=404, detail="插图未找到")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"拉取插图失败: {e}")
+
 # ==========================================
 # 3. 标签与科目管理接口 (Requirement 2)
 # ==========================================
@@ -315,6 +434,84 @@ async def update_question_tags(
     return {"message": "标签绑定成功", "tags": request.tags}
 
 # ==========================================
+# 4. 批量管理接口 (Batch Operations)
+# ==========================================
+
+class BatchRequest(BaseModel):
+    ids: List[str]
+
+@router.post("/batch/restore")
+async def batch_restore_questions(
+    request: BatchRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """批量从回收站恢复错题"""
+    batch = db.batch()
+    # 分片处理，Firestore 'in' 查询限制单次最多 30 个项目
+    chunks = [request.ids[i:i + 30] for i in range(0, len(request.ids), 30)]
+    count = 0
+    for chunk in chunks:
+        docs = db.collection("questions").where("user_id", "==", current_user.username).where("id", "in", chunk).stream()
+        for doc in docs:
+            batch.update(doc.reference, {"is_deleted": False})
+            count += 1
+    batch.commit()
+    return {"message": f"成功恢复 {count} 道错题 到错题本"}
+
+@router.post("/batch/permanent")
+async def batch_permanent_delete_questions(
+    request: BatchRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """批量永久删除回收站错题 (不可逆)"""
+    batch = db.batch()
+    chunks = [request.ids[i:i + 30] for i in range(0, len(request.ids), 30)]
+    count = 0
+    for chunk in chunks:
+        docs = db.collection("questions").where("user_id", "==", current_user.username).where("id", "in", chunk).stream()
+        for doc in docs:
+            batch.delete(doc.reference)
+            count += 1
+    batch.commit()
+    return {"message": f"成功永久删除 {count} 道错题"}
+
+# ==========================================
+# 5. TTS 语音接口 (Text-to-Speech)
+# ==========================================
+
+from fastapi.responses import Response
+
+@router.post("/{question_id}/tts/ticket")
+async def create_tts_ticket(
+    question_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    签发用于播放 TTS 的极短生命期一次性凭证（Ticket ID）。
+    """
+    import uuid, datetime
+    # 验证 question_id 所属权
+    doc_ref = db.collection("questions").document(question_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="错题未找到")
+    data = doc.to_dict()
+    if data["user_id"] != current_user.username:
+        raise HTTPException(status_code=403, detail="无权操作该错题")
+        
+    ticket_id = str(uuid.uuid4())
+    ticket_payload = {
+        "user_id": current_user.username,
+        "question_id": question_id,
+        "expires_at": (datetime.datetime.utcnow() + datetime.timedelta(minutes=3)).isoformat()
+    }
+    db.collection("tts_tickets").document(ticket_id).set(ticket_payload)
+    return {"ticket_id": ticket_id}
+
+
+# ==========================================
+
+
 # 4. 试卷生成与导出接口
 # ==========================================
 

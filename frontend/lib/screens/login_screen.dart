@@ -60,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32.0),
@@ -70,8 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
               // 1. 顶部 Logo/Icon
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  color: Colors.indigo,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -81,12 +81,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'MistakeMentor',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: Colors.indigo,
+                  color: Theme.of(context).primaryColor,
                 ),
               ),
               const SizedBox(height: 8),
@@ -150,8 +150,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),

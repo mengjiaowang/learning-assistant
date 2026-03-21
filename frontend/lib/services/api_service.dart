@@ -75,13 +75,22 @@ class ApiService {
   // 2. 错题管理服务
   // ==========================================
   
-  Future<List<QuestionModel>> fetchQuestions({String? knowledgePoint, String? tag, bool isDeleted = false}) async {
+  Future<List<QuestionModel>> fetchQuestions({
+    String? knowledgePoint, 
+    String? tag, 
+    bool isDeleted = false,
+    int? limit,
+    int? offset,
+  }) async {
     try {
       final response = await _dio.get('/api/v1/questions/', queryParameters: {
         if (knowledgePoint != null) 'knowledge_point': knowledgePoint,
         if (tag != null) 'tag': tag,
         'is_deleted': isDeleted,
+        if (limit != null) 'limit': limit,
+        if (offset != null) 'offset': offset,
       });
+
       
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data['questions'];
@@ -210,6 +219,48 @@ class ApiService {
     } catch (e) {
       print('Create paper ticket error: $e');
       return null;
+    }
+  }
+
+  Future<String?> createTtsTicket(String questionId) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/questions/$questionId/tts/ticket',
+      );
+      if (response.statusCode == 200) {
+        return response.data["ticket_id"];
+      }
+      return null;
+    } catch (e) {
+      print('Create tts ticket error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> batchRestoreQuestions(List<String> questionIds) async {
+
+    try {
+      final response = await _dio.post(
+        '/api/v1/questions/batch/restore',
+        data: {'ids': questionIds},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Batch Restore error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> batchPermanentDeleteQuestions(List<String> questionIds) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/questions/batch/permanent',
+        data: {'ids': questionIds},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Batch Permanent Delete error: $e');
+      return false;
     }
   }
 }

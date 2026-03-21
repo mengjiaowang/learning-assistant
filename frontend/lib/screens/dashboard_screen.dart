@@ -8,6 +8,9 @@ import 'login_screen.dart';
 import 'recycle_bin_screen.dart';
 import 'package:flutter_math_fork/flutter_math.dart'; // 导入公式渲染包
 import 'package:url_launcher/url_launcher.dart';
+import 'package:audioplayers/audioplayers.dart'; // 新增：语音播报
+import '../main.dart'; // 引入 themeNotifier
+
 
 // ==========================================
 // 自定义混合文本渲染控件 (支持行内 $...$ 公式)
@@ -15,8 +18,10 @@ import 'package:url_launcher/url_launcher.dart';
 class MathText extends StatelessWidget {
   final String text;
   final TextStyle? style;
+  final int? maxLines; // 新增
+  final TextOverflow? overflow; // 新增
 
-  const MathText(this.text, {this.style, Key? key}) : super(key: key);
+  const MathText(this.text, {this.style, this.maxLines, this.overflow, Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +57,8 @@ class MathText extends StatelessWidget {
 
     return Text.rich(
       TextSpan(children: spans),
+      maxLines: maxLines, // 新增
+      overflow: overflow, // 新增
     );
   }
 }
@@ -66,12 +73,23 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final AudioPlayer _audioPlayer = AudioPlayer(); // 新增：TTS 播放器
+  bool _isPlayingTts = false; // 新增：播放状态
+  String? _currentPlayingQid; // 新增：当前播放的错题 ID
+
+  final ScrollController _scrollController = ScrollController(); // 新增：滚动控制器
   List<QuestionModel> _questions = [];
+
   bool _isLoading = true;
+  bool _isLoadingMore = false; // 新增：加载更多状态
+  bool _hasMore = true;        // 新增：是否还有更多
+  int _currentOffset = 0;      // 新增：偏移量
+  final int _limit = 24;       // 新增：每页极限页长
   
   // 新增科目过滤状态
   List<String> _allTags = ["全部"];
   String _selectedTag = "全部";
+
 
   // --- 新增：试卷导出与多选状态 ---
   bool _isSelectionMode = false;
@@ -82,50 +100,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _scrollController.addListener(_scrollListener); // 新增滚动监听
     widget.refreshNotifier?.addListener(_loadData); // 添加流监听
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_hasMore && !_isLoading && !_isLoadingMore) {
+        _loadData(isLoadMore: true);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.dispose(); // 释放控制器
+    _audioPlayer.dispose(); // 新增：释放播放器
     widget.refreshNotifier?.removeListener(_loadData); // 销毁监听
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+
+  Future<void> _loadData({bool isLoadMore = false}) async {
+    if (isLoadMore) {
+      if (!_hasMore || _isLoadingMore) return;
+      setState(() => _isLoadingMore = true);
+    } else {
+      setState(() {
+         _isLoading = true;
+         _currentOffset = 0; // 重置
+         _hasMore = true;
+      });
+    }
+
     try {
       // 同时拉取标签列表
       final tags = await apiService.fetchTags();
       
-      // 拉法支持过滤项
       final fetchTag = _selectedTag == '全部' ? null : _selectedTag;
-      List<QuestionModel> data = await apiService.fetchQuestions(tag: fetchTag);
+      List<QuestionModel> data = await apiService.fetchQuestions(
+        tag: fetchTag,
+        limit: _limit,
+        offset: _currentOffset,
+      );
       
-      // 时间跨度本地过滤
       if (_selectedDateRange != null) {
         data = data.where((q) {
           try {
             final ct = DateTime.parse(q.createdAt);
             final start = _selectedDateRange!.start;
-            // 截至时间设置为当天 23:59:59 确保全天覆盖
             final end = _selectedDateRange!.end.add(const Duration(days: 1)); 
             return ct.isAfter(start) && ct.isBefore(end);
-          } catch (_) {
-            return true;
-          }
+          } catch (_) { return true; }
         }).toList();
       }
 
       setState(() {
          _allTags = ["全部", ...tags];
-         _questions = data;
+         if (isLoadMore) {
+           _questions.addAll(data);
+         } else {
+           _questions = data;
+         }
+         _currentOffset += data.length;
+         _hasMore = data.length == _limit; // 如果返回等于 limit 说明还有
          _isLoading = false;
+         _isLoadingMore = false;
       });
     } catch (e) {
       print('Load dashboard error: $e');
-      setState(() => _isLoading = false);
+      setState(() {
+         _isLoading = false;
+         _isLoadingMore = false;
+      });
     }
   }
+
 
   void _exportPaper() async {
     if (_selectedQuestionIds.isEmpty) return;
@@ -172,10 +222,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MistakeMentor - 错题笔记本'),
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
+        title: const Text('王铮的错题本'), // 已更新
         actions: [
+          IconButton(
+            icon: Icon(themeNotifier.value == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
+            tooltip: '切换护眼模式',
+            onPressed: () {
+              themeNotifier.value = themeNotifier.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+              setState(() {}); // 刷新当前页图标
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新列表',
@@ -231,7 +287,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                    Text('已选择 ${_selectedQuestionIds.length} 道错题', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                    ElevatedButton.icon(
-                     style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, elevation: 0),
+                     style: ElevatedButton.styleFrom(elevation: 0),
                      icon: const Icon(Icons.picture_as_pdf),
                      label: const Text('预览 A/B 试卷视图'),
                      onPressed: _exportPaper,
@@ -241,8 +297,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           : null,
       body: _isLoading
-          ? const Center(
-              child: SpinKitFadingCircle(color: Colors.indigo, size: 50),
+          ? Center(
+              child: SpinKitFadingCircle(color: Theme.of(context).primaryColor, size: 50),
             )
           : Column(
               children: [
@@ -250,23 +306,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Expanded(
                   child: _questions.isEmpty
                       ? const Center(child: Text('暂无相关错题，快去拍照录入吧！'))
-                      : Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: GridView.builder(
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2, // 适合平板
-                              childAspectRatio: 3 / 2,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
+                      : CustomScrollView(
+                          controller: _scrollController,
+                          slivers: [
+                            SliverPadding(
+                              padding: const EdgeInsets.all(8.0),
+                              sliver: SliverGrid(
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  childAspectRatio: 3 / 2,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                ),
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) => _buildCard(_questions[index]),
+                                  childCount: _questions.length,
+                                ),
+                              ),
                             ),
-                            itemCount: _questions.length,
-                            itemBuilder: (context, index) {
-                              final item = _questions[index];
-                              return _buildCard(item);
-                            },
-                          ),
+                            if (_isLoadingMore)
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Center(child: SpinKitFadingCircle(color: Theme.of(context).primaryColor, size: 25)),
+                                ),
+                              ),
+                            if (!_hasMore && _questions.isNotEmpty)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(child: Text('💡 已加载全部题目', style: TextStyle(color: Colors.grey, fontSize: 13))),
+                                ),
+                              ),
+                          ],
                         ),
                 ),
+
               ],
             ),
     );
@@ -275,14 +350,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _formatTimestamp(String ts) {
     if (ts.isEmpty) return '未知';
     try {
+      final dt = DateTime.parse(ts).toLocal(); 
+      final date = "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
+      final time = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}";
+      return '$date $time';
+    } catch (e) {
       if (ts.contains('T')) {
         final parts = ts.split('T');
         final date = parts[0];
         final time = parts[1].split('.').first;
         return '$date $time';
       }
-      return ts;
-    } catch (e) {
       return ts;
     }
   }
@@ -296,7 +374,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           elevation: isSelected ? 8 : 4,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: isSelected ? const BorderSide(color: Colors.indigo, width: 2) : BorderSide.none,
+            side: isSelected ? BorderSide(color: Theme.of(context).primaryColor, width: 2) : BorderSide.none,
           ),
           child: InkWell(
             onTap: _isSelectionMode
@@ -322,7 +400,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           : (item.imageBlank.isNotEmpty ? item.imageBlank : item.imageOriginal),
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => const Center(child: SpinKitWave(color: Colors.indigo, size: 20)),
+                      placeholder: (context, url) => Center(child: SpinKitWave(color: Theme.of(context).primaryColor, size: 20)),
                       errorWidget: (context, url, error) => Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported)),
                     ),
                   ),
@@ -334,7 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       Text(
                         item.knowledgePoint,
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor),
                       ),
                       const SizedBox(height: 4),
                       if (item.tags.isNotEmpty)
@@ -358,6 +436,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       MathText(
                         item.questionText,
                         style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
                       Align(
@@ -380,7 +460,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             right: 4,
             child: Checkbox(
               value: isSelected,
-              activeColor: Colors.indigo,
+              activeColor: Theme.of(context).primaryColor,
               checkColor: Colors.white,
               shape: const CircleBorder(),
               onChanged: (val) {
@@ -404,30 +484,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.85,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 1. 固定头部 (关闭按钮 + 标题)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        bool showSimilarAnalysis = false;
+        bool showSimilarAnswer = false;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('📌 题目详情', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.indigo)),
-                        const SizedBox(height: 4),
-                        Text('录入时间: ${_formatTimestamp(item.createdAt)}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
+                  // 1. 固定头部 (关闭按钮 + 标题)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('📌 题目详情', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Theme.of(context).primaryColor)),
+                            const SizedBox(height: 4),
+                            Text('录入时间: ${_formatTimestamp(item.createdAt)}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+
                   IconButton(
                     icon: const Icon(Icons.close_rounded, color: Colors.grey),
                     onPressed: () => Navigator.pop(context),
@@ -448,7 +534,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       MathText(item.questionText, style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 12),
                       if (item.imageOriginal.isNotEmpty) ...[
-                        const Text('🖼️ 题目原图：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                        Text('🖼️ 题目原图：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).primaryColor)),
                         const SizedBox(height: 8),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
@@ -464,7 +550,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                       const Divider(height: 20),
                       
-                      const Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                      Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).primaryColor)),
                       const SizedBox(height: 8),
                       StatefulBuilder(  // 局部刷新标签勾选状态
                         builder: (context, setModalState) {
@@ -494,7 +580,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const Divider(height: 30),
                       
-                      const Text('🔍 AI 详解与步骤：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('🔍 AI 详解与步骤：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
+                          StatefulBuilder(
+                            builder: (context, setButtonState) {
+                              final isCurrent = _currentPlayingQid == item.id;
+                              final isPlaying = isCurrent && _isPlayingTts;
+                              
+                              return IconButton(
+                                icon: isPlaying 
+                                    ? const SpinKitRing(color: Colors.green, size: 24, lineWidth: 2) 
+                                    : const Icon(Icons.volume_up_rounded, color: Colors.green, size: 26),
+                                tooltip: '语音朗读解析',
+                                onPressed: isPlaying ? () async {
+                                  await _audioPlayer.stop();
+                                  setButtonState(() {
+                                    _isPlayingTts = false;
+                                    _currentPlayingQid = null;
+                                  });
+                                } : () async {
+                                  setButtonState(() {
+                                    _currentPlayingQid = item.id;
+                                    _isPlayingTts = true;
+                                  });
+                                  final ticketId = await apiService.createTtsTicket(item.id);
+                                  if (ticketId != null) {
+                                      final url = '${ApiService.baseUrl}/api/v1/questions/tts?ticket_id=$ticketId';
+                                      try {
+                                          await _audioPlayer.play(UrlSource(url));
+                                          _audioPlayer.onPlayerComplete.first.then((_) {
+                                              if (context.mounted) {
+                                                  setButtonState(() {
+                                                      _isPlayingTts = false;
+                                                      _currentPlayingQid = null;
+                                                  });
+                                              }
+                                          });
+                                      } catch (e) {
+                                           print("Play error: $e");
+                                           if (context.mounted) {
+                                               setButtonState(() {
+                                                   _isPlayingTts = false;
+                                                   _currentPlayingQid = null;
+                                               });
+                                           }
+                                      }
+                                  } else {
+                                      if (context.mounted) {
+                                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音生成失败，请稍后重试')));
+                                         setButtonState(() {
+                                             _isPlayingTts = false;
+                                             _currentPlayingQid = null;
+                                         });
+                                      }
+                                  }
+                                },
+                              );
+                            }
+                          ),
+                        ],
+                      ),
+
                       const SizedBox(height: 8),
                       if (item.analysisSteps.isEmpty) const Text('暂无解析'),
                       ...item.analysisSteps.map((step) => Padding(
@@ -512,20 +660,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(height: 8),
                       if (item.similarQuestion != null) ...[
                          MathText(item.similarQuestion!['question_text'] ?? '暂无'),
-                         if (item.similarQuestion!['answer'] != null && item.similarQuestion!['answer'].toString().isNotEmpty) ...[
-                           const SizedBox(height: 12),
-                           const Text('✅ 参考答案：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
-                           const SizedBox(height: 4),
-                           MathText(item.similarQuestion!['answer'].toString()),
-                         ],
+                         const SizedBox(height: 12),
+
+                         // 1. 解析过程 (交换至前方)
                          if (item.similarQuestion!['analysis'] != null && item.similarQuestion!['analysis'].toString().isNotEmpty) ...[
+                           Row(
+                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                             children: [
+                               const Text('📝 解析过程：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey)),
+                               TextButton.icon(
+                                 onPressed: () => setModalState(() => showSimilarAnalysis = !showSimilarAnalysis),
+                                 icon: Icon(showSimilarAnalysis ? Icons.expand_less : Icons.expand_more, color: Colors.blueGrey),
+                                 label: Text(showSimilarAnalysis ? '隐藏' : '点击查看', style: const TextStyle(color: Colors.blueGrey, fontSize: 13)),
+                               ),
+                             ],
+                           ),
+                           if (showSimilarAnalysis) ...[
+                             const SizedBox(height: 4),
+                             MathText(item.similarQuestion!['analysis'].toString()),
+                           ],
                            const SizedBox(height: 12),
-                           const Text('📝 解析过程：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey)),
-                           const SizedBox(height: 4),
-                           MathText(item.similarQuestion!['analysis'].toString()),
+                         ],
+
+                         // 2. 参考答案 (交换至后方)
+                         if (item.similarQuestion!['answer'] != null && item.similarQuestion!['answer'].toString().isNotEmpty) ...[
+                           Row(
+                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                             children: [
+                               const Text('✅ 参考答案：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                               TextButton.icon(
+                                 onPressed: () => setModalState(() => showSimilarAnswer = !showSimilarAnswer),
+                                 icon: Icon(showSimilarAnswer ? Icons.expand_less : Icons.expand_more, color: Colors.green),
+                                 label: Text(showSimilarAnswer ? '隐藏' : '点击查看', style: const TextStyle(color: Colors.green, fontSize: 13)),
+                               ),
+                             ],
+                           ),
+                           if (showSimilarAnswer) ...[
+                             const SizedBox(height: 4),
+                             MathText(item.similarQuestion!['answer'].toString()),
+                           ],
                          ],
                       ] else
                          const Text('生成中...'),
+
                       const Divider(height: 30),
 
                       // ==========================================
@@ -556,9 +733,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
-        );
+            ); // Container End
+          }, // StatefulBuilder builder End
+        ); // StatefulBuilder End
       },
-    );
+
+    ).whenComplete(() {
+      _audioPlayer.stop();
+      _isPlayingTts = false;
+      _currentPlayingQid = null;
+    });
+
   }
 
   Color _getTagColor(String tag) {
@@ -567,7 +752,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       '数学': Colors.blue,
       '英语': Colors.green,
     };
-    return colorMap[tag] ?? Colors.indigo; 
+    return colorMap[tag] ?? Theme.of(context).primaryColor; 
   }
 
   Widget _buildFilterBar() {
@@ -615,7 +800,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: Icon(
               _selectedDateRange != null ? Icons.today_rounded : Icons.calendar_month_outlined,
-              color: _selectedDateRange != null ? Colors.indigo : Colors.grey[600],
+              color: _selectedDateRange != null ? Theme.of(context).primaryColor : Colors.grey[600],
             ),
             tooltip: '按入库时间筛选',
             onPressed: () async {
@@ -739,8 +924,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                if (name.isNotEmpty) {
                   await apiService.addTag(name);
                   setDialogState(() {
-                     availableTags.add(name);
-                     currentTags.add(name);
+                      availableTags.add(name);
+                      currentTags.add(name);
                   });
                   if (context.mounted) Navigator.pop(context); // 关闭二级
                }
