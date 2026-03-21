@@ -16,10 +16,17 @@ os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
 class GCPQuestionsAIService:
     def __init__(self):
         # 初始化 2026 统一 GenAI Client 后端
+        # Imagen 专属：锁定 us-central1 用于图像编辑处理 (Imagen 3/4)
+        self.client_imagen = genai.Client(
+            vertexai=True,
+            project=PROJECT_ID,
+            location="us-central1"
+        )
+        # Gemini 专属：切换至 global endpoint 保证预览模型可用性
         self.client = genai.Client(
             vertexai=True,
             project=PROJECT_ID,
-            location="us-central1" # 锁定 Imagen 4 相关区位节点
+            location="global"
         )
     def remove_handwriting(self, image_bytes: bytes) -> bytes:
         """
@@ -34,7 +41,7 @@ class GCPQuestionsAIService:
             )
             
             # 使用 Imagen 3 的编辑模式 (使用 EDIT_MODE_INPAINT_REMOVAL 达成痕迹擦除)
-            response = self.client.models.edit_image(
+            response = self.client_imagen.models.edit_image(
                 model='imagen-3.0-capability-001', 
                 prompt="remove all handwriting, handwritten answers, and red pen marks completely, leave only the printed background question text and diagram",
                 reference_images=[raw_image],
@@ -64,10 +71,12 @@ class GCPQuestionsAIService:
         3. 给出分步解析、考点定位和防错指南。
         4. 提供 1 道相同考点但数值不同的【举一反三】变式题（请务必附带答案与解析步骤）。
         5. 对比现有标签候选列表：[EXISTING_TAGS]。请根据题目解析，从列表中选出 1-2 个最贴合本题的标签；如果列表中没有合适的，可自动建议。
+        6. **[图表位置提取]**：仔细观察题目是否包含**任何非纯文本、辅助解题用到的视觉结构**（不论任何科目，包括但不限于：几何图形、物理受力分析图、化学分子机构或实验装置、生物细胞组织结构、地理地图、历史路线图、以及各类数据表格、統計图表等）。如果包含，请输出该视觉结构在整体图片上的**归一化边界框坐标**：`[ymin, xmin, ymax, xmax]`，其中坐标值均为浮点数，且在 `0.0` 到 `1.0` 之间。如果不包含，则输出 `null`。
 
         请严格以下列 JSON 结构返回结果，且不要包含任何 Markdown 标识符(如 ```json)：
         {
             "question_text": "题干文本 (包含 LaTeX)",
+            "diagram_bbox": [ymin, xmin, ymax, xmax] 或 null,
             "options": ["选项A", "选项B"...] 或 null,
             "knowledge_point": "考点名称",
             "analysis_steps": ["步骤1简介...", "步骤2简介..."],
@@ -90,7 +99,7 @@ class GCPQuestionsAIService:
 
             # 调用 2.5 正式版，在 us-central1 具备完整支持
             response = self.client.models.generate_content(
-                model='gemini-2.5-pro',
+                model='gemini-3.1-pro-preview',
                 contents=[image_part, prompt_content],
                 config=types.GenerateContentConfig(
                     temperature=0.2, # 降低温度，防止幻觉

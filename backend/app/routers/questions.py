@@ -95,7 +95,7 @@ async def upload_question(
                 img = img.crop((left, top, right, bottom))
                 
             buf = io.BytesIO()
-            img.save(buf, format=img.format or 'JPEG')
+            img.save(buf, format=img.format or 'JPEG', quality=95, subsampling=0)
             contents = buf.getvalue()
         except Exception as e:
             print(f"[Warning] 图片处理（镜像/旋转/裁剪）失败: {e}")
@@ -126,12 +126,42 @@ async def upload_question(
 
     ai_result = ai_service.ocr_and_analyze(contents, existing_tags=existing_tags)
     
+    # --- 新增：智能图表提取 + 局部Imagen去手写流水线 ---
+    diagram_bbox = ai_result.get("diagram_bbox")
+    url_diagram_clean = None
+    if diagram_bbox and isinstance(diagram_bbox, list) and len(diagram_bbox) == 4:
+         try:
+              from PIL import Image
+              orig_img = Image.open(io.BytesIO(contents))
+              W, H = orig_img.size
+              ymin, xmin, ymax, xmax = diagram_bbox
+              left = int(max(0.0, min(1.0, xmin)) * W)
+              top = int(max(0.0, min(1.0, ymin)) * H)
+              right = int(max(0.0, min(1.0, xmax)) * W)
+              bottom = int(max(0.0, min(1.0, ymax)) * H)
+              
+              if right > left + 5 and bottom > top + 5: # 剔除畸形噪点
+                   cropped_img = orig_img.crop((left, top, right, bottom))
+                   crop_buf = io.BytesIO()
+                   cropped_img.save(crop_buf, format='JPEG', quality=95, subsampling=0)
+                   cropped_bytes = crop_buf.getvalue()
+                   
+                   # 单独叫 Imagen 除尘去手写
+                   clean_bytes = ai_service.remove_handwriting(cropped_bytes)
+                   
+                   # 上传 GCS 自主路径
+                   upload_to_gcs(clean_bytes, f"diagram/{question_uuid}.jpg")
+                   url_diagram_clean = f"/api/v1/questions/{question_uuid}/diagram"
+         except Exception as e:
+              print(f"[Warning] BBox 图象切片与去手写流水线失败: {e}")
+    
     # [Step 3] 编排存入 Firestore
     question_doc = {
         "id": question_uuid,
         "user_id": current_user.username,
         "image_original": url_original,
         "image_blank": url_blank,
+        "image_diagram_clean": url_diagram_clean, # 新增干净配图插图映射
         "question_text": ai_result.get("question_text", ""),
         "options": ai_result.get("options"),
         "knowledge_point": ai_result.get("knowledge_point", "未对齐考点"),
@@ -331,6 +361,20 @@ async def get_question_image(question_id: str):
         raise HTTPException(status_code=404, detail="图片未找到")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"拉取图片失败: {e}")
+
+@router.get("/{question_id}/diagram")
+async def get_question_diagram(question_id: str):
+    """流式代理插图拉取去手写干净配图"""
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        # 从 diagram/ 路径加载
+        blob = bucket.blob(f"diagram/{question_id}.jpg")
+        bytes_data = blob.download_as_bytes()
+        return Response(content=bytes_data, media_type="image/jpeg")
+    except NotFound:
+        raise HTTPException(status_code=404, detail="插图未找到")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"拉取插图失败: {e}")
 
 # ==========================================
 # 3. 标签与科目管理接口 (Requirement 2)

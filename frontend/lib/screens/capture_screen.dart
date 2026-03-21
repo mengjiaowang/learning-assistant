@@ -56,7 +56,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     if (cameras.isEmpty) return;
     _controller = CameraController(
       cameras[_cameraIndex],
-      ResolutionPreset.medium,
+      ResolutionPreset.high,
     );
     _initializeControllerFuture = _controller.initialize();
   }
