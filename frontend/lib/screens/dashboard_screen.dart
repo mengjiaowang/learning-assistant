@@ -174,6 +174,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  String _formatTimestamp(String ts) {
+    if (ts.isEmpty) return '未知';
+    try {
+      if (ts.contains('T')) {
+        final parts = ts.split('T');
+        final date = parts[0];
+        final time = parts[1].split('.').first;
+        return '$date $time';
+      }
+      return ts;
+    } catch (e) {
+      return ts;
+    }
+  }
+
   Widget _buildCard(QuestionModel item) {
     return Card(
       elevation: 4,
@@ -229,6 +244,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     item.questionText,
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      _formatTimestamp(item.createdAt).split(' ').first, // 仅显示日期
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ),
                 ],
               ),
             )
@@ -251,91 +274,122 @@ class _DashboardScreenState extends State<DashboardScreen> {
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('📝 题目正文：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                const SizedBox(height: 8),
-                MathText(item.questionText, style: const TextStyle(fontSize: 16)),
-                const Divider(height: 20),
-                
-                const Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
-                const SizedBox(height: 8),
-                StatefulBuilder(  // 局部刷新标签勾选状态
-                  builder: (context, setModalState) {
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1. 固定头部 (关闭按钮 + 标题)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ...item.tags.map((tag) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _getTagColor(tag).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _getTagColor(tag).withOpacity(0.5)),
-                          ),
-                          child: Text(tag, style: TextStyle(color: _getTagColor(tag), fontSize: 13, fontWeight: FontWeight.bold)),
-                        )),
-                        ActionChip(
-                          label: const Text('+ 管理科目', style: TextStyle(fontSize: 12)),
-                          backgroundColor: Colors.grey[100],
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          onPressed: () => _showTagSelectionDialog(context, item, setModalState),
-                        ),
+                        const Text('📌 题目详情', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.indigo)),
+                        const SizedBox(height: 4),
+                        Text('录入时间: ${_formatTimestamp(item.createdAt)}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       ],
-                    );
-                  }
-                ),
-                const Divider(height: 30),
-                
-                const Text('🔍 AI 详解与步骤：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
-                const SizedBox(height: 8),
-                if (item.analysisSteps.isEmpty) const Text('暂无解析'),
-                ...item.analysisSteps.map((step) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: MathText('• $step', style: const TextStyle(height: 1.4, fontSize: 15)),
-                    )),
-                const Divider(height: 30),
-
-                const Text('💡 易错点警示：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange)),
-                const SizedBox(height: 8),
-                MathText(item.trapWarning.isNotEmpty ? item.trapWarning : '暂无', style: const TextStyle(fontStyle: FontStyle.italic)),
-                const Divider(height: 30),
-
-                const Text('🧠 举一反三变式题：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.purple)),
-                const SizedBox(height: 8),
-                if (item.similarQuestion != null)
-                   MathText(item.similarQuestion!['question_text'] ?? '暂无')
-                else
-                   const Text('生成中...'),
-                const Divider(height: 30),
-
-                // ==========================================
-                // 底部删除行动项
-                // ==========================================
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red[50], // 淡红背景
-                      foregroundColor: Colors.red,
-                      elevation: 0,
                     ),
-                    icon: const Icon(Icons.delete_sweep),
-                    label: const Text('移入回收站'),
-                    onPressed: () async {
-                      final ok = await apiService.deleteQuestion(item.id);
-                      if (ok) {
-                        if (mounted) Navigator.pop(context); // 关闭详情底栏
-                        _loadData(); // 重新拉取
-                      }
-                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: '关闭',
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              
+              // 2. 可滚动的主体内容
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('📝 题目正文：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 8),
+                      MathText(item.questionText, style: const TextStyle(fontSize: 16)),
+                      const Divider(height: 20),
+                      
+                      const Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo)),
+                      const SizedBox(height: 8),
+                      StatefulBuilder(  // 局部刷新标签勾选状态
+                        builder: (context, setModalState) {
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              ...item.tags.map((tag) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _getTagColor(tag).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: _getTagColor(tag).withOpacity(0.5)),
+                                ),
+                                child: Text(tag, style: TextStyle(color: _getTagColor(tag), fontSize: 13, fontWeight: FontWeight.bold)),
+                              )),
+                              ActionChip(
+                                label: const Text('+ 管理科目', style: TextStyle(fontSize: 12)),
+                                backgroundColor: Colors.grey[100],
+                                padding: EdgeInsets.zero,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                onPressed: () => _showTagSelectionDialog(context, item, setModalState),
+                              ),
+                            ],
+                          );
+                        }
+                      ),
+                      const Divider(height: 30),
+                      
+                      const Text('🔍 AI 详解与步骤：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
+                      const SizedBox(height: 8),
+                      if (item.analysisSteps.isEmpty) const Text('暂无解析'),
+                      ...item.analysisSteps.map((step) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: MathText('• $step', style: const TextStyle(height: 1.4, fontSize: 15)),
+                          )),
+                      const Divider(height: 30),
+
+                      const Text('💡 易错点警示：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange)),
+                      const SizedBox(height: 8),
+                      MathText(item.trapWarning.isNotEmpty ? item.trapWarning : '暂无', style: const TextStyle(fontStyle: FontStyle.italic)),
+                      const Divider(height: 30),
+
+                      const Text('🧠 举一反三变式题：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.purple)),
+                      const SizedBox(height: 8),
+                      if (item.similarQuestion != null)
+                         MathText(item.similarQuestion!['question_text'] ?? '暂无')
+                      else
+                         const Text('生成中...'),
+                      const Divider(height: 30),
+
+                      // ==========================================
+                      // 底部删除行动项
+                      // ==========================================
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[50], // 淡红背景
+                            foregroundColor: Colors.red,
+                            elevation: 0,
+                          ),
+                          icon: const Icon(Icons.delete_sweep),
+                          label: const Text('移入回收站'),
+                          onPressed: () async {
+                            final ok = await apiService.deleteQuestion(item.id);
+                            if (ok) {
+                              if (mounted) Navigator.pop(context); // 关闭详情底栏
+                              _loadData(); // 重新拉取
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },

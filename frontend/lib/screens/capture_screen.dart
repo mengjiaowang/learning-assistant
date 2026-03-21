@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' as ui; // 新增：底层 Canvas 绘制接口
-import 'dart:math' as math; // 新增：用于 Cover Fit 计算
+
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -26,7 +25,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
   // 新增：保存拍摄后的冷冻帧数据
   Uint8List? _capturedImageBytes;
-  ui.Image? _decodedImage; // 新增：解码后的静态画板图像源
+
   String? _capturedImageName;
 
   @override
@@ -82,10 +81,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         _capturedImageName = image.name;
       });
 
-      // 后台底层解码，解决 Web 翻转时黑屏渲染 Bug
-      ui.decodeImageFromList(bytes, (ui.Image img) {
-         if (mounted) setState(() => _decodedImage = img);
-      });
+
     } catch (e) {
       print('Take picture error: $e');
     }
@@ -158,18 +154,28 @@ class _CaptureScreenState extends State<CaptureScreen> {
           if (snapshot.connectionState == ConnectionState.done) {
             return Stack(
               children: [
-                // 核心：若已拍照，显示静态图片，不再刷新相机画面
+                // 核心：始终保持 CameraPreview 在底层，避免 Web 卸载导致黑屏
                 Positioned.fill(
-                  child: _capturedImageBytes != null
-                      ? (_decodedImage != null 
-                          ? CustomPaint(painter: ImagePainter(_decodedImage!, _isMirrored))
-                          : Image.memory(_capturedImageBytes!, width: double.infinity, height: double.infinity, fit: BoxFit.cover)) // 降级兜底
-                      : Transform(
-                          alignment: Alignment.center,
-                          transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
-                          child: CameraPreview(_controller),
-                        ),
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
+                    child: CameraPreview(_controller),
+                  ),
                 ),
+                // 若已拍照，静态图片覆盖在上面
+                if (_capturedImageBytes != null)
+                  Positioned.fill(
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
+                      child: Image.memory(
+                        _capturedImageBytes!, 
+                        width: double.infinity, 
+                        height: double.infinity, 
+                        fit: BoxFit.cover
+                      ),
+                    ),
+                  ),
                 if (_isUploading)
                   Container(
                     color: Colors.black45,
@@ -210,7 +216,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         : () {
                             setState(() {
                               _capturedImageBytes = null; // 撤销冷冻，回到相机
-                              _decodedImage = null;       // 静静清理画面缓存
+
                             });
                           },
                     backgroundColor: Colors.red[400],
@@ -229,37 +235,4 @@ class _CaptureScreenState extends State<CaptureScreen> {
   }
 }
 
-class ImagePainter extends CustomPainter {
-  final ui.Image image;
-  final bool mirror;
-  
-  ImagePainter(this.image, this.mirror);
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (mirror) {
-       canvas.save();
-       canvas.translate(size.width, 0);
-       canvas.scale(-1, 1);
-    }
-    
-    double srcWidth = image.width.toDouble();
-    double srcHeight = image.height.toDouble();
-    double scale = math.max(size.width / srcWidth, size.height / srcHeight);
-    double dstWidth = srcWidth * scale;
-    double dstHeight = srcHeight * scale;
-    double left = (size.width - dstWidth) / 2;
-    double top = (size.height - dstHeight) / 2;
-    
-    canvas.drawImageRect(
-      image,
-      Rect.fromLTWH(0, 0, srcWidth, srcHeight),
-      Rect.fromLTWH(left, top, dstWidth, dstHeight),
-      Paint(),
-    );
-    if (mirror) canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant ImagePainter oldDelegate) => true;
-}
