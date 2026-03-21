@@ -22,6 +22,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
   bool _isUploading = false;
   int _cameraIndex = 0;
   bool _isMirrored = false; // 新增：是否开启镜像翻转
+  int _rotationTurns = 0;   // 新增：旋转四分位角 (0, 1, 2, 3 -> 0, 90, 180, 270度)
 
   // 新增：保存拍摄后的冷冻帧数据
   Uint8List? _capturedImageBytes;
@@ -96,7 +97,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
       final success = await apiService.uploadQuestion(
         _capturedImageBytes!, 
         _capturedImageName ?? "original.jpg",
-        mirror: _isMirrored
+        mirror: _isMirrored,
+        rotateDegrees: _rotationTurns * 90,
       );
       
       setState(() => _isUploading = false);
@@ -142,6 +144,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
             },
           ),
           IconButton(
+            icon: const Icon(Icons.rotate_right_rounded, color: Colors.white),
+            tooltip: '顺时针顺延90度',
+            onPressed: () {
+              setState(() {
+                _rotationTurns = (_rotationTurns + 1) % 4;
+              });
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.flip_camera_ios, color: Colors.white),
             tooltip: '切换摄像头',
             onPressed: _isUploading ? null : _toggleCamera,
@@ -156,23 +167,29 @@ class _CaptureScreenState extends State<CaptureScreen> {
               children: [
                 // 核心：始终保持 CameraPreview 在底层，避免 Web 卸载导致黑屏
                 Positioned.fill(
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
-                    child: CameraPreview(_controller),
+                  child: RotatedBox(
+                    quarterTurns: _rotationTurns,
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
+                      child: CameraPreview(_controller),
+                    ),
                   ),
                 ),
                 // 若已拍照，静态图片覆盖在上面
                 if (_capturedImageBytes != null)
                   Positioned.fill(
-                    child: Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
-                      child: Image.memory(
-                        _capturedImageBytes!, 
-                        width: double.infinity, 
-                        height: double.infinity, 
-                        fit: BoxFit.cover
+                    child: RotatedBox(
+                      quarterTurns: _rotationTurns,
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.rotationY(_isMirrored ? 3.1415926535897932 : 0),
+                        child: Image.memory(
+                          _capturedImageBytes!, 
+                          width: double.infinity, 
+                          height: double.infinity, 
+                          fit: BoxFit.cover
+                        ),
                       ),
                     ),
                   ),

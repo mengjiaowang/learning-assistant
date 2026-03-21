@@ -52,6 +52,7 @@ def upload_to_gcs(image_bytes: bytes, file_name: str, content_type: str = "image
 async def upload_question(
     file: UploadFile = File(...),
     mirror: bool = Form(False),
+    rotate_degrees: int = Form(0), # 新增：顺时针旋转 90/180/270
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -61,19 +62,28 @@ async def upload_question(
     """
     contents = await file.read()
 
-    if mirror:
+    if mirror or rotate_degrees != 0:
         try:
-            from PIL import Image, ImageOps
+            from PIL import Image
             import io
             img = Image.open(io.BytesIO(contents))
-            # 水平镜像翻转
-            img = ImageOps.mirror(img)
+            
+            if mirror:
+                from PIL import ImageOps
+                img = ImageOps.mirror(img)
+                
+            if rotate_degrees == 90:
+                img = img.transpose(Image.ROTATE_270) # 顺 90 -> 逆 270 对齐轴心
+            elif rotate_degrees == 180:
+                img = img.transpose(Image.ROTATE_180)
+            elif rotate_degrees == 270:
+                img = img.transpose(Image.ROTATE_90)
+                
             buf = io.BytesIO()
-            # 保持原格式
             img.save(buf, format=img.format or 'JPEG')
             contents = buf.getvalue()
         except Exception as e:
-            print(f"[Warning] 镜像翻转失败: {e}")
+            print(f"[Warning] 图片处理（镜像/旋转）失败: {e}")
 
     question_uuid = str(uuid.uuid4())
     

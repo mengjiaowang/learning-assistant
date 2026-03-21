@@ -94,7 +94,7 @@ class ApiService {
     }
   }
 
-  Future<bool> uploadQuestion(Uint8List imageBytes, String fileName, {bool mirror = false}) async {
+  Future<bool> uploadQuestion(Uint8List imageBytes, String fileName, {bool mirror = false, int rotateDegrees = 0}) async {
     try {
       FormData formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(
@@ -102,6 +102,7 @@ class ApiService {
           filename: fileName
         ),
         'mirror': mirror.toString(),
+        'rotate_degrees': rotateDegrees.toString(),
       });
 
       final response = await _dio.post('/api/v1/questions/upload', data: formData);
