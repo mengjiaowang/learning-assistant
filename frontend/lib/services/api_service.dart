@@ -311,9 +311,13 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchStatistics() async {
+  Future<Map<String, dynamic>> fetchStatistics({String? startDate, String? endDate}) async {
     try {
-      final response = await _dio.get('/api/v1/reviews/statistics');
+      final queryParams = <String, dynamic>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+
+      final response = await _dio.get('/api/v1/reviews/statistics', queryParameters: queryParams);
       if (response.statusCode == 200) {
         return response.data;
       }

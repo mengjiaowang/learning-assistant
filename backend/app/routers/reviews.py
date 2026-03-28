@@ -146,7 +146,11 @@ async def submit_review(
     }
 
 @router.get("/statistics")
-async def get_statistics(current_user: User = Depends(get_current_user)):
+async def get_statistics(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user)
+):
     """
     Get aggregation statistics for dashboard
     """
@@ -165,15 +169,21 @@ async def get_statistics(current_user: User = Depends(get_current_user)):
     }
     
     # 2. Subject Breakdown
-    # Format: {"SubjectName": {"mastered": X, "blurry": y, "unmastered": z}}
     subjects = {}
     
-    # 3. Time Trends (activity by day for last 7 days)
-    # Format: {"YYYY-MM-DD": count}
+    # 3. Time Trends (activity by day)
     activity = {}
     
     for doc in docs:
         data = doc.to_dict()
+        created_at = data.get("created_at", "")
+        
+        # Filter by creation date if requested
+        if start_date and created_at < start_date:
+            continue
+        if end_date and created_at > end_date:
+            continue
+            
         status = data.get("status", "unreviewed")
         tags = data.get("tags", [])
         history = data.get("review_history", [])
@@ -183,8 +193,7 @@ async def get_statistics(current_user: User = Depends(get_current_user)):
             overview[status] += 1
         overview["total"] += 1
         
-        # Breakdown by tags (assume primary subject is first tag or we count for all tags)
-        # We will count primary tag (subject)
+        # Breakdown by tags
         primary_tag = tags[0] if tags else "未分类"
         if primary_tag not in subjects:
             subjects[primary_tag] = {"mastered": 0, "blurry": 0, "unmastered": 0}
@@ -199,12 +208,36 @@ async def get_statistics(current_user: User = Depends(get_current_user)):
                 day_str = timestamp[:10] # YYYY-MM-DD
                 activity[day_str] = activity.get(day_str, 0) + 1
                 
-    # Format trends for the frontend explicitly
-    # Only keep last 7 or 14 days of activity to keep payload small
+    # Format trends for the frontend dynamically
     now = datetime.now(timezone(timedelta(hours=8)))
+    
+    delta = 7
+    base_date = now
+    
+    if start_date and end_date:
+        try:
+            # Parse dates to calculate delta
+            # Assuming 'Z' or standard ISO format from frontend
+            s_dt = datetime.fromisoformat(start_date.split('T')[0])
+            e_dt = datetime.fromisoformat(end_date.split('T')[0])
+            delta = (e_dt - s_dt).days + 1
+            if delta <= 0:
+                delta = 1
+            if delta > 90: # Cap at 90 days for performance
+                delta = 90
+            base_date = e_dt
+        except Exception as e:
+            # Fallback to 7 days
+            delta = 7
+            base_date = now
+
+    # If base_date is in the future relative to now, we might want to cap it.
+    if base_date > now:
+        base_date = now
+
     recent_activity = []
-    for i in range(7):
-        d = (now - timedelta(days=6-i)).strftime("%Y-%m-%d")
+    for i in range(delta):
+        d = (base_date - timedelta(days=delta-1-i)).strftime("%Y-%m-%d")
         recent_activity.append({
             "date": d,
             "count": activity.get(d, 0)

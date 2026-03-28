@@ -15,6 +15,9 @@ class StatisticsScreen extends StatefulWidget {
 class _StatisticsScreenState extends State<StatisticsScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _statsData;
+  String _timeRange = 'all'; // 'all', '7days', '30days', 'custom'
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   void initState() {
@@ -32,7 +35,23 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   Future<void> _loadStats() async {
     setState(() => _isLoading = true);
     try {
-      final stats = await apiService.fetchStatistics();
+      String? startStr;
+      String? endStr;
+
+      if (_timeRange == '7days') {
+        final now = DateTime.now();
+        startStr = now.subtract(const Duration(days: 6)).toIso8601String().split('T')[0];
+        endStr = now.toIso8601String().split('T')[0];
+      } else if (_timeRange == '30days') {
+        final now = DateTime.now();
+        startStr = now.subtract(const Duration(days: 29)).toIso8601String().split('T')[0];
+        endStr = now.toIso8601String().split('T')[0];
+      } else if (_timeRange == 'custom' && _startDate != null && _endDate != null) {
+        startStr = _startDate!.toIso8601String().split('T')[0];
+        endStr = _endDate!.toIso8601String().split('T')[0];
+      }
+
+      final stats = await apiService.fetchStatistics(startDate: startStr, endDate: endStr);
       setState(() {
         _statsData = stats;
         _isLoading = false;
@@ -76,6 +95,25 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildFilterChip('全部', 'all'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('最近7天', '7days'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('最近30天', '30days'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('自定义', 'custom'),
+                  if (_timeRange == 'custom' && _startDate != null && _endDate != null) ...[
+                    const SizedBox(width: 8),
+                    Text('${_startDate!.toString().substring(5,10)} 至 ${_endDate!.toString().substring(5,10)}', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                  ]
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
             const Text('🔥 全局进度比', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Card(
@@ -133,6 +171,19 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   height: 200,
                   child: LineChart(
                     LineChartData(
+                      lineTouchData: LineTouchData(
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (touchedSpot) => Colors.blueGrey[900]?.withOpacity(0.9) ?? Colors.black87,
+                          getTooltipItems: (touchedSpots) {
+                            return touchedSpots.map((spot) {
+                              return LineTooltipItem(
+                                '${spot.y.toInt()} 次',
+                                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              );
+                            }).toList();
+                          },
+                        ),
+                      ),
                       gridData: const FlGridData(show: false),
                       titlesData: FlTitlesData(
                         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -188,7 +239,26 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   child: BarChart(
                     BarChartData(
                       alignment: BarChartAlignment.spaceAround,
-                      barTouchData: BarTouchData(enabled: false),
+                      barTouchData: BarTouchData(
+                        enabled: true,
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipColor: (group) => Colors.blueGrey[900]?.withOpacity(0.9) ?? Colors.black87,
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                            // Extract values from stack items
+                            final items = rod.rodStackItems;
+                            if (items.length >= 3) {
+                              final unmastered = items[0].toY - items[0].fromY;
+                              final blurry = items[1].toY - items[1].fromY;
+                              final mastered = items[2].toY - items[2].fromY;
+                              return BarTooltipItem(
+                                '未掌握: ${unmastered.toInt()}\n模糊: ${blurry.toInt()}\n完全掌握: ${mastered.toInt()}',
+                                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              );
+                            }
+                            return BarTooltipItem('${rod.toY.toInt()}', const TextStyle(color: Colors.white));
+                          },
+                        ),
+                      ),
                       titlesData: FlTitlesData(
                         show: true,
                         bottomTitles: AxisTitles(
@@ -255,5 +325,50 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildFilterChip(String label, String value) {
+    bool isSelected = _timeRange == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (selected) {
+          if (value == 'custom') {
+            _selectCustomDateRange();
+          } else {
+            setState(() {
+              _timeRange = value;
+              _startDate = null;
+              _endDate = null;
+            });
+            _loadStats();
+          }
+        }
+      },
+      selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      backgroundColor: Colors.grey[200],
+      labelStyle: TextStyle(
+        color: isSelected ? Theme.of(context).primaryColor : Colors.black87,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+      ),
+    );
+  }
+
+  Future<void> _selectCustomDateRange() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _startDate != null && _endDate != null ? DateTimeRange(start: _startDate!, end: _endDate!) : null,
+    );
+    if (picked != null) {
+      setState(() {
+        _timeRange = 'custom';
+        _startDate = picked.start;
+        _endDate = picked.end;
+      });
+      _loadStats();
+    }
   }
 }

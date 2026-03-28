@@ -18,6 +18,9 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
   bool _isLoading = true;
   bool _showAnswer = false;
   bool _showOriginalImage = false;
+  bool _showSimilarQuestion = false;
+  bool _showSimilarAnalysis = false;
+  bool _showSimilarAnswer = false;
   List<QuestionModel> _questions = [];
   int _currentIndex = 0;
   
@@ -32,6 +35,9 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
       _isLoading = true;
       _showAnswer = false;
       _showOriginalImage = false;
+      _showSimilarQuestion = false;
+      _showSimilarAnalysis = false;
+      _showSimilarAnswer = false;
       _currentIndex = 0;
     });
     
@@ -59,6 +65,9 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
         _currentIndex++;
         _showAnswer = false;
         _showOriginalImage = false;
+        _showSimilarQuestion = false;
+        _showSimilarAnalysis = false;
+        _showSimilarAnswer = false;
       } else {
         _questions = [];
       }
@@ -81,6 +90,9 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
         _currentIndex++;
         _showAnswer = false;
         _showOriginalImage = false;
+        _showSimilarQuestion = false;
+        _showSimilarAnalysis = false;
+        _showSimilarAnswer = false;
       } else {
         _questions = []; // Finished batch
       }
@@ -205,6 +217,60 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
                               ],
                             ),
                           )
+                        ],
+                        if (item.similarQuestion != null) ...[
+                          const Divider(height: 30),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('🧠 举一反三变式题', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.purple)),
+                              TextButton.icon(
+                                onPressed: () => setState(() => _showSimilarQuestion = !_showSimilarQuestion),
+                                icon: Icon(_showSimilarQuestion ? Icons.expand_less : Icons.expand_more, color: Colors.purple),
+                                label: Text(_showSimilarQuestion ? '收起' : '查看变式题', style: const TextStyle(color: Colors.purple, fontSize: 13)),
+                              ),
+                            ],
+                          ),
+                          if (_showSimilarQuestion) ...[
+                            const SizedBox(height: 8),
+                            MathText(item.similarQuestion!['question_text'] ?? '暂无变式题内容'),
+                            const SizedBox(height: 12),
+                            if (item.similarQuestion!['analysis'] != null && item.similarQuestion!['analysis'].toString().isNotEmpty) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('📝 变式解析：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blueGrey)),
+                                  TextButton.icon(
+                                    onPressed: () => setState(() => _showSimilarAnalysis = !_showSimilarAnalysis),
+                                    icon: Icon(_showSimilarAnalysis ? Icons.expand_less : Icons.expand_more, color: Colors.blueGrey, size: 16),
+                                    label: Text(_showSimilarAnalysis ? '隐藏' : '展开解析', style: const TextStyle(color: Colors.blueGrey, fontSize: 12)),
+                                  ),
+                                ],
+                              ),
+                              if (_showSimilarAnalysis) ...[
+                                const SizedBox(height: 4),
+                                MathText(item.similarQuestion!['analysis'].toString()),
+                              ],
+                              const SizedBox(height: 12),
+                            ],
+                            if (item.similarQuestion!['answer'] != null && item.similarQuestion!['answer'].toString().isNotEmpty) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('✅ 参考答案：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
+                                  TextButton.icon(
+                                    onPressed: () => setState(() => _showSimilarAnswer = !_showSimilarAnswer),
+                                    icon: Icon(_showSimilarAnswer ? Icons.expand_less : Icons.expand_more, color: Colors.green, size: 16),
+                                    label: Text(_showSimilarAnswer ? '隐藏' : '展开答案', style: const TextStyle(color: Colors.green, fontSize: 12)),
+                                  ),
+                                ],
+                              ),
+                              if (_showSimilarAnswer) ...[
+                                const SizedBox(height: 4),
+                                MathText(item.similarQuestion!['answer'].toString()),
+                              ],
+                            ],
+                          ],
                         ]
                       ],
                       const Divider(height: 30),
