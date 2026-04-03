@@ -19,7 +19,7 @@ class GCPQuestionsAIService:
             vertexai=True,
             project=PROJECT_ID,
             location="global",
-            http_options=types.HttpOptions(timeout=60000) # 60 秒超时
+            http_options=types.HttpOptions(timeout=120000) # 120 秒超时
         )
     @retry(
         stop=stop_after_attempt(3),

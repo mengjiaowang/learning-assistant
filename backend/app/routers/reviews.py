@@ -58,8 +58,8 @@ async def get_review_batch(
             due_query = due_query.where(filter=FieldFilter("tags", "array_contains", subj))
         due_query = due_query.limit(limit)
 
-        unrev_docs = unrev_query.stream()
-        due_docs = due_query.stream()
+        unrev_docs = unrev_query.stream(timeout=10)
+        due_docs = due_query.stream(timeout=10)
 
         for doc in due_docs:
             data = doc.to_dict()
@@ -105,7 +105,7 @@ async def get_free_batch(
         
     query = query.limit(limit * 2) # 多拉一些用于 Python 过滤
 
-    docs = query.stream()
+    docs = query.stream(timeout=10)
     
     final_batch = []
     for doc in docs:
@@ -130,7 +130,7 @@ async def submit_review(
     Submit a review result and calculate the next review interval.
     """
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Question not found")
@@ -179,7 +179,7 @@ async def submit_review(
         "review_history": firestore.ArrayUnion([history_entry])
     }
     
-    doc_ref.update(update_data)
+    doc_ref.update(update_data, timeout=10)
     
     return {
         "message": "Review recorded successfully",
@@ -199,7 +199,7 @@ async def get_statistics(
     questions_ref = db.collection("questions")
     docs = questions_ref.where(filter=FieldFilter("user_id", "==", current_user.username))\
                         .where(filter=FieldFilter("is_deleted", "==", False))\
-                        .stream()
+                        .stream(timeout=10)
                         
     # 1. Overview stats
     overview = {

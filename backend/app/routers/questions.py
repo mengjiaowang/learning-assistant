@@ -30,16 +30,16 @@ from google.api_core.exceptions import NotFound
 def upload_to_gcs(image_bytes: bytes, file_name: str, content_type: str = "image/jpeg") -> str:
     """上传图片 bytes 到 GCS 并返回公开访问链接 (自用版方便获取)"""
     try:
-        bucket = storage_client.get_bucket(BUCKET_NAME)
+        bucket = storage_client.get_bucket(BUCKET_NAME, timeout=20)
     except NotFound:
         # 只有在桶确实不存在时才自动创建
-        bucket = storage_client.create_bucket(BUCKET_NAME, location="asia-northeast1")
+        bucket = storage_client.create_bucket(BUCKET_NAME, location="asia-northeast1", timeout=20)
     except Exception as e:
          print(f"[Warning] get_bucket 未决异常，尝试使用直接绑定: {e}")
          bucket = storage_client.bucket(BUCKET_NAME)
     
     blob = bucket.blob(file_name)
-    blob.upload_from_string(image_bytes, content_type=content_type)
+    blob.upload_from_string(image_bytes, content_type=content_type, timeout=20)
          
     return blob.public_url
 
@@ -64,7 +64,7 @@ async def _process_question_background(question_uuid: str, contents: bytes, user
     # [Step 2] Gemini 推理 & 结构化解析 (抓取标签库作为 AI 参照)
     existing_tags = []
     try:
-        tags_doc = db.collection("tags").document(username).get()
+        tags_doc = db.collection("tags").document(username).get(timeout=10)
         if tags_doc.exists:
             existing_tags = tags_doc.to_dict().get("tags", [])
     except Exception:
@@ -123,7 +123,7 @@ async def _process_question_background(question_uuid: str, contents: bytes, user
         "tags": ai_result.get("suggested_tags", []),
     }
     
-    db.collection("questions").document(question_uuid).update(updated_fields)
+    db.collection("questions").document(question_uuid).update(updated_fields, timeout=10)
     print(f"[Background] 题目 {question_uuid} 异步解析履约完成。")
 
 
@@ -229,7 +229,7 @@ async def upload_question(
         "created_at": datetime.now(timezone(timedelta(hours=8))).isoformat()
     }
     
-    db.collection("questions").document(question_uuid).set(init_doc)
+    db.collection("questions").document(question_uuid).set(init_doc, timeout=10)
 
     # [Step 3] 提交给 FastAPI 异步线程池跑重度 OCR 和毛玻璃
     background_tasks.add_task(_process_question_background, question_uuid, contents, current_user.username)
@@ -256,7 +256,7 @@ async def list_questions(
     if tag:
         # 使用全量查询然后在内存排序和截断，避免强制要求复合索引
         query = query.where(filter=FieldFilter("tags", "array_contains", tag))
-        docs = query.stream()
+        docs = query.stream(timeout=10)
         result = [doc.to_dict() for doc in docs]
         result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return {"questions": result[offset:offset+limit]}
@@ -265,7 +265,7 @@ async def list_questions(
         docs = query.order_by("created_at", direction=firestore.Query.DESCENDING)\
                     .offset(offset)\
                     .limit(limit)\
-                    .stream()
+                    .stream(timeout=10)
         result = [doc.to_dict() for doc in docs]
         return {"questions": result}
 
@@ -276,7 +276,7 @@ async def get_tts(
     """
     根据 Ticket ID 调用 Google Cloud TTS 并流式返回 MP3
     """
-    ticket_ref = db.collection("tts_tickets").document(ticket_id).get()
+    ticket_ref = db.collection("tts_tickets").document(ticket_id).get(timeout=10)
     if not ticket_ref.exists:
         raise HTTPException(status_code=404, detail="该凭证无效或已被消费")
     ticket_data = ticket_ref.to_dict()
@@ -290,7 +290,7 @@ async def get_tts(
         raise HTTPException(status_code=400, detail="凭证格式异常")
         
     question_id = ticket_data.get("question_id")
-    doc = db.collection("questions").document(question_id).get()
+    doc = db.collection("questions").document(question_id).get(timeout=10)
     if not doc.exists:
          raise HTTPException(status_code=404, detail="错题未找到")
     q = doc.to_dict()
@@ -331,11 +331,11 @@ async def get_tts(
             input=synthesis_input, voice=voice, audio_config=audio_config
         )
         # 单次消费 ticket
-        db.collection("tts_tickets").document(ticket_id).delete()
+        db.collection("tts_tickets").document(ticket_id).delete(timeout=10)
         return Response(content=response.audio_content, media_type="audio/mpeg")
     except Exception as e:
          # 容错：即使 TTS 失败清理 ticket 防止堆积
-         db.collection("tts_tickets").document(ticket_id).delete()
+         db.collection("tts_tickets").document(ticket_id).delete(timeout=10)
          raise HTTPException(status_code=500, detail=f"TTS 生成异常: {e}")
 
 @router.get("/{question_id}")
@@ -346,7 +346,7 @@ async def get_question_detail(
 ):
     """错题详情查看"""
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
         
@@ -363,7 +363,7 @@ async def delete_question(
 ):
     """软删除单条错题（移入回收站）"""
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
         
@@ -372,7 +372,7 @@ async def delete_question(
          raise HTTPException(status_code=403, detail="无权删除该错题")
          
     # 执行软删除：翻转状态标志位位
-    doc_ref.update({"is_deleted": True})
+    doc_ref.update({"is_deleted": True}, timeout=10)
     return {"message": "错题已移入回收站"}
 
 @router.post("/{question_id}/restore")
@@ -382,7 +382,7 @@ async def restore_question(
 ):
     """从回收站恢复单条错题"""
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
         
@@ -390,7 +390,7 @@ async def restore_question(
     if data["user_id"] != current_user.username:
          raise HTTPException(status_code=403, detail="无权操作该错题")
          
-    doc_ref.update({"is_deleted": False})
+    doc_ref.update({"is_deleted": False}, timeout=10)
     return {"message": "错题已成功恢复至错题本"}
 
 @router.delete("/{question_id}/permanent")
@@ -400,7 +400,7 @@ async def permanent_delete_question(
 ):
     """永久删除/粉碎单条错题"""
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
         
@@ -408,7 +408,7 @@ async def permanent_delete_question(
     if data["user_id"] != current_user.username:
          raise HTTPException(status_code=403, detail="无权删除该错题")
          
-    doc_ref.delete()
+    doc_ref.delete(timeout=10)
     return {"message": "错题已从云端永久删除"}
 from fastapi.responses import Response
 
@@ -421,7 +421,7 @@ async def get_question_image(question_id: str):
         blob = bucket.blob(f"original/{question_id}.jpg")
         
         # 从 GCS 下载字节流
-        bytes_data = blob.download_as_bytes()
+        bytes_data = blob.download_as_bytes(timeout=20)
         return Response(content=bytes_data, media_type="image/jpeg")
     except NotFound:
         raise HTTPException(status_code=404, detail="图片未找到")
@@ -434,14 +434,14 @@ async def get_question_blank(question_id: str):
     try:
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"blank/{question_id}.jpg")
-        bytes_data = blob.download_as_bytes()
+        bytes_data = blob.download_as_bytes(timeout=20)
         return Response(content=bytes_data, media_type="image/jpeg")
     except NotFound:
         # 降级：如果 blank 不存在，尝试返回 original
         try:
             bucket = storage_client.bucket(BUCKET_NAME)
             blob = bucket.blob(f"original/{question_id}.jpg")
-            bytes_data = blob.download_as_bytes()
+            bytes_data = blob.download_as_bytes(timeout=20)
             return Response(content=bytes_data, media_type="image/jpeg")
         except:
              raise HTTPException(status_code=404, detail="图片未找到")
@@ -454,14 +454,14 @@ async def get_question_thumbnail(question_id: str):
     try:
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"thumbnail/{question_id}.jpg")
-        bytes_data = blob.download_as_bytes()
+        bytes_data = blob.download_as_bytes(timeout=20)
         return Response(content=bytes_data, media_type="image/jpeg")
     except NotFound:
         # 降级：如果 thumbnail 不存在，尝试返回 original
         try:
             bucket = storage_client.bucket(BUCKET_NAME)
             blob = bucket.blob(f"original/{question_id}.jpg")
-            bytes_data = blob.download_as_bytes()
+            bytes_data = blob.download_as_bytes(timeout=20)
             return Response(content=bytes_data, media_type="image/jpeg")
         except:
              raise HTTPException(status_code=404, detail="图片未找到")
@@ -476,19 +476,19 @@ async def _do_regenerate_erasure(question_id: str):
         # 获取原图
         bucket = storage_client.bucket(BUCKET_NAME)
         blob_original = bucket.blob(f"original/{question_id}.jpg")
-        image_bytes = blob_original.download_as_bytes()
+        image_bytes = blob_original.download_as_bytes(timeout=20)
         
         # 重新调用擦除服务
         clean_bytes = ai_service.remove_handwriting(image_bytes)
         
         # 保存覆盖 blank
         blob_blank = bucket.blob(f"blank/{question_id}.jpg")
-        blob_blank.upload_from_string(clean_bytes, content_type="image/jpeg")
+        blob_blank.upload_from_string(clean_bytes, content_type="image/jpeg", timeout=20)
         
         # 更新 Firestore 带上缓存穿透参数
         timestamp = int(datetime.utcnow().timestamp())
         new_url = f"/api/v1/questions/{question_id}/blank?t={timestamp}"
-        doc_ref.update({"image_blank": new_url})
+        doc_ref.update({"image_blank": new_url}, timeout=10)
         print(f"[Success] Background regeneration complete for {question_id}")
     except Exception as e:
         print(f"[Error] Background regeneration failed for {question_id}: {e}")
@@ -501,7 +501,7 @@ async def regenerate_erasure(
 ):
     """重新生成该题目的擦除图"""
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
     
@@ -523,7 +523,7 @@ async def get_question_diagram(question_id: str):
         bucket = storage_client.bucket(BUCKET_NAME)
         # 从 diagram/ 路径加载
         blob = bucket.blob(f"diagram/{question_id}.jpg")
-        bytes_data = blob.download_as_bytes()
+        bytes_data = blob.download_as_bytes(timeout=20)
         return Response(content=bytes_data, media_type="image/jpeg")
     except NotFound:
         raise HTTPException(status_code=404, detail="插图未找到")
@@ -536,7 +536,7 @@ async def get_question_diagram(question_id: str):
 async def get_tags(current_user: User = Depends(get_current_user)):
     """拉取用户的所有自定义标签"""
     doc_ref = db.collection("tags").document(current_user.username)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     
     if doc.exists:
         return {"tags": doc.to_dict().get("tags", [])}
@@ -549,12 +549,12 @@ async def add_tag(
 ):
     """追加一个新标签"""
     doc_ref = db.collection("tags").document(current_user.username)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     
     if not doc.exists:
-        doc_ref.set({"tags": ["语文", "数学", "英语", tag]})
+        doc_ref.set({"tags": ["语文", "数学", "英语", tag]}, timeout=10)
     else:
-        doc_ref.update({"tags": firestore.ArrayUnion([tag])})
+        doc_ref.update({"tags": firestore.ArrayUnion([tag])}, timeout=10)
          
     return {"message": f"标签 '{tag}' 新增成功"}
 
@@ -569,7 +569,7 @@ async def update_question_tags(
 ):
     """给单条错题绑定/覆盖多个标签"""
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
         
@@ -577,7 +577,7 @@ async def update_question_tags(
     if data["user_id"] != current_user.username:
          raise HTTPException(status_code=403, detail="无权操作该错题")
          
-    doc_ref.update({"tags": request.tags})
+    doc_ref.update({"tags": request.tags}, timeout=10)
     return {"message": "标签绑定成功", "tags": request.tags}
 
 # 批量管理
@@ -596,7 +596,7 @@ async def batch_restore_questions(
     chunks = [request.ids[i:i + 30] for i in range(0, len(request.ids), 30)]
     count = 0
     for chunk in chunks:
-        docs = db.collection("questions").where(filter=FieldFilter("user_id", "==", current_user.username)).where(filter=FieldFilter("id", "in", chunk)).stream()
+        docs = db.collection("questions").where(filter=FieldFilter("user_id", "==", current_user.username)).where(filter=FieldFilter("id", "in", chunk)).stream(timeout=10)
         for doc in docs:
             batch.update(doc.reference, {"is_deleted": False})
             count += 1
@@ -613,7 +613,7 @@ async def batch_permanent_delete_questions(
     chunks = [request.ids[i:i + 30] for i in range(0, len(request.ids), 30)]
     count = 0
     for chunk in chunks:
-        docs = db.collection("questions").where(filter=FieldFilter("user_id", "==", current_user.username)).where(filter=FieldFilter("id", "in", chunk)).stream()
+        docs = db.collection("questions").where(filter=FieldFilter("user_id", "==", current_user.username)).where(filter=FieldFilter("id", "in", chunk)).stream(timeout=10)
         for doc in docs:
             batch.delete(doc.reference)
             count += 1
@@ -635,7 +635,7 @@ async def create_tts_ticket(
     import uuid, datetime
     # 验证 question_id 所属权
     doc_ref = db.collection("questions").document(question_id)
-    doc = doc_ref.get()
+    doc = doc_ref.get(timeout=10)
     if not doc.exists:
         raise HTTPException(status_code=404, detail="错题未找到")
     data = doc.to_dict()
@@ -648,7 +648,7 @@ async def create_tts_ticket(
         "question_id": question_id,
         "expires_at": (datetime.datetime.utcnow() + datetime.timedelta(minutes=3)).isoformat()
     }
-    db.collection("tts_tickets").document(ticket_id).set(ticket_payload)
+    db.collection("tts_tickets").document(ticket_id).set(ticket_payload, timeout=10)
     return {"ticket_id": ticket_id}
 
 
@@ -680,7 +680,7 @@ async def create_paper_ticket(
     }
     
     # 写入 Firestore，用于一期一次消费
-    db.collection("paper_tickets").document(ticket_id).set(ticket_payload)
+    db.collection("paper_tickets").document(ticket_id).set(ticket_payload, timeout=10)
     return {"ticket_id": ticket_id}
 
 @router.get("/paper/export")
@@ -690,7 +690,7 @@ async def generate_paper(
     """
     根据给定的授权票据 ticket_id 渲染排版精美的 HTML 试卷，支持自带 Katex/MathJax 算理核心。
     """
-    ticket_ref = db.collection("paper_tickets").document(ticket_id).get()
+    ticket_ref = db.collection("paper_tickets").document(ticket_id).get(timeout=10)
     if not ticket_ref.exists:
         raise HTTPException(status_code=404, detail="该试卷生成凭证无效或已被消费")
         
@@ -714,7 +714,7 @@ async def generate_paper(
     # 逐一从 Firestore 加载题目并校验所属权
     for qid in id_list:
         try:
-            doc = db.collection("questions").document(qid).get()
+            doc = db.collection("questions").document(qid).get(timeout=10)
             if doc.exists:
                 data = doc.to_dict()
                 if data.get("user_id") == current_username:
