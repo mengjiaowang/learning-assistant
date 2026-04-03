@@ -91,16 +91,33 @@ class MainNavigationShell extends StatefulWidget {
 class _MainNavigationShellState extends State<MainNavigationShell> {
   int _currentIndex = 0;
   final ValueNotifier<bool> _refreshNotifier = ValueNotifier(false); // 新增：刷新信号源
+  String? _selectedStatus; // 新增：从看板传递的状态
 
-  late final List<Widget> _screens;
+  late List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    _updateScreens();
+  }
+
+  void _updateScreens() {
     _screens = [
-      DashboardScreen(refreshNotifier: _refreshNotifier), // 实际上是首页错题列表
+      DashboardScreen(
+        refreshNotifier: _refreshNotifier,
+        initialStatus: _selectedStatus,
+      ), // 实际上是首页错题列表
       ReviewSessionScreen(refreshNotifier: _refreshNotifier),
-      StatisticsScreen(refreshNotifier: _refreshNotifier),
+      StatisticsScreen(
+        refreshNotifier: _refreshNotifier,
+        onStatusSelected: (status) {
+          setState(() {
+            _selectedStatus = status;
+            _currentIndex = 0; // 切换到首页
+            _updateScreens(); // 更新屏幕参数
+          });
+        },
+      ),
     ];
   }
 

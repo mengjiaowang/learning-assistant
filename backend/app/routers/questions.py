@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form, BackgroundTasks, Query
 from google.cloud import firestore, storage
 from google.cloud.firestore_v1.base_query import FieldFilter
 from pydantic import BaseModel
@@ -240,12 +240,13 @@ async def upload_question(
 async def list_questions(
     current_user: User = Depends(get_current_user),
     knowledge_point: Optional[str] = None,
-    tag: Optional[str] = None, # 新增：支持标签过滤
-    is_deleted: bool = False, # 新增：默认不查询回收站
-    limit: int = 24, # 新增：分页大小
-    offset: int = 0  # 新增：偏移量
+    tags: Optional[List[str]] = Query(None), # 修改：支持多标签过滤
+    statuses: Optional[List[str]] = Query(None), # 修改：支持多状态过滤
+    is_deleted: bool = False,
+    limit: int = 24,
+    offset: int = 0
 ):
-    """获取错题列表，支持分页、考点及标签筛选"""
+    """获取错题列表，支持分页、考点及标签/状态多选筛选"""
     query = db.collection("questions")\
               .where(filter=FieldFilter("user_id", "==", current_user.username))\
               .where(filter=FieldFilter("is_deleted", "==", is_deleted))
@@ -253,11 +254,20 @@ async def list_questions(
     if knowledge_point:
         query = query.where(filter=FieldFilter("knowledge_point", "==", knowledge_point))
     
-    if tag:
-        # 使用全量查询然后在内存排序和截断，避免强制要求复合索引
-        query = query.where(filter=FieldFilter("tags", "array_contains", tag))
+    if tags or statuses:
+        # 为了支持多选，统一采用全量拉取后在内存中过滤
+        # 注意：如果 tags 很多，这里可能会拉取较多数据，但对于个人应用是可控的
         docs = query.stream(timeout=10)
         result = [doc.to_dict() for doc in docs]
+        
+        if tags:
+            # OR 逻辑：题目的 tags 包含任意一个选中的 tag
+            result = [x for x in result if any(t in x.get("tags", []) for t in tags)]
+            
+        if statuses:
+            # OR 逻辑：题目的 status 包含在选中的 statuses 中
+            result = [x for x in result if x.get("status") in statuses]
+            
         result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return {"questions": result[offset:offset+limit]}
     else:
@@ -770,9 +780,7 @@ async def generate_paper(
 
         [ANSWERS_LIST]
 
-        <div class="footer">
-            <p>由 MistakeMentor 智能错题本生成</p>
-        </div>
+
     </body>
     </html>
     """

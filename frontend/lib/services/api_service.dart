@@ -84,7 +84,8 @@ class ApiService {
   
   Future<List<QuestionModel>> fetchQuestions({
     String? knowledgePoint, 
-    String? tag, 
+    List<String>? tags, 
+    List<String>? statuses,
     bool isDeleted = false,
     int? limit,
     int? offset,
@@ -92,7 +93,8 @@ class ApiService {
     try {
       final response = await _dio.get('/api/v1/questions/', queryParameters: {
         if (knowledgePoint != null) 'knowledge_point': knowledgePoint,
-        if (tag != null) 'tag': tag,
+        if (tags != null && tags.isNotEmpty) 'tags': tags,
+        if (statuses != null && statuses.isNotEmpty) 'statuses': statuses,
         'is_deleted': isDeleted,
         if (limit != null) 'limit': limit,
         if (offset != null) 'offset': offset,

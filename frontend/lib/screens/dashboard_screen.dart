@@ -63,8 +63,9 @@ class MathText extends StatelessWidget {
 
 class DashboardScreen extends StatefulWidget {
   final ValueNotifier<bool>? refreshNotifier;
+  final String? initialStatus; // 新增：初始状态
 
-  const DashboardScreen({this.refreshNotifier, Key? key}) : super(key: key);
+  const DashboardScreen({this.refreshNotifier, this.initialStatus, Key? key}) : super(key: key);
 
   @override
   _DashboardScreenState createState() => _DashboardScreenState();
@@ -85,8 +86,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final int _limit = 24;
   
   // 科目过滤状态
-  List<String> _allTags = ["全部"];
-  String _selectedTag = "全部";
+  List<String> _allTags = [];
+  final Set<String> _selectedTags = {};
+
+  // 复习状态过滤
+  final List<String> _allStatuses = ["待复习", "完全掌握", "仍然模糊", "未掌握"];
+  final Set<String> _selectedStatuses = {};
 
 
   // 试卷导出与多选状态
@@ -97,9 +102,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialStatus != null) {
+      final status = _mapEnglishStatusToChinese(widget.initialStatus!);
+      if (status != '全部') {
+        _selectedStatuses.add(status);
+      }
+    }
     _loadData();
     _scrollController.addListener(_scrollListener);
     widget.refreshNotifier?.addListener(_loadData); // 添加流监听
+  }
+
+  String _mapEnglishStatusToChinese(String english) {
+    switch (english) {
+      case 'unreviewed': return '待复习';
+      case 'mastered': return '完全掌握';
+      case 'blurry': return '仍然模糊';
+      case 'unmastered': return '未掌握';
+      default: return '全部';
+    }
+  }
+
+  Color _getStatusColor(String chineseStatus) {
+    switch (chineseStatus) {
+      case '完全掌握': return Colors.green;
+      case '仍然模糊': return Colors.orange;
+      case '未掌握': return Colors.red;
+      case '待复习': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  String? _mapChineseStatusToEnglish(String chinese) {
+    switch (chinese) {
+      case '待复习': return 'unreviewed';
+      case '完全掌握': return 'mastered';
+      case '仍然模糊': return 'blurry';
+      case '未掌握': return 'unmastered';
+      default: return null;
+    }
   }
 
   void _scrollListener() {
@@ -135,9 +176,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // 同时拉取标签列表
       final tags = await apiService.fetchTags();
       
-      final fetchTag = _selectedTag == '全部' ? null : _selectedTag;
+      final fetchTags = _selectedTags.isEmpty ? null : _selectedTags.toList();
+      final fetchStatuses = _selectedStatuses.isEmpty ? null : _selectedStatuses.map((s) => _mapChineseStatusToEnglish(s)!).toList();
       List<QuestionModel> data = await apiService.fetchQuestions(
-        tag: fetchTag,
+        tags: fetchTags,
+        statuses: fetchStatuses,
         limit: _limit,
         offset: _currentOffset,
       );
@@ -155,7 +198,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       setState(() {
-         _allTags = ["全部", ...tags];
+         _allTags = tags;
          if (isLoadMore) {
            _questions.addAll(data);
          } else {
@@ -416,11 +459,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor),
                       ),
                       const SizedBox(height: 4),
-                      if (item.tags.isNotEmpty)
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: item.tags.map((tag) => Container(
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          // 状态标签
+                          () {
+                            final statusChinese = _mapEnglishStatusToChinese(item.status);
+                            final statusColor = _getStatusColor(statusChinese);
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: statusColor.withOpacity(0.5), width: 0.5),
+                              ),
+                              child: Text(
+                                statusChinese,
+                                style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.bold),
+                              ),
+                            );
+                          }(),
+                          // 科目标签
+                          ...item.tags.map((tag) => Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: _getTagColor(tag).withOpacity(0.1),
@@ -431,8 +492,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               tag,
                               style: TextStyle(fontSize: 10, color: _getTagColor(tag), fontWeight: FontWeight.bold),
                             ),
-                          )).toList(),
-                        ),
+                          )),
+                        ],
+                      ),
                       const SizedBox(height: 4),
                       MathText(
                         item.questionText,
@@ -852,46 +914,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildFilterBar() {
     return Container(
-      height: 50,
-      padding: const EdgeInsets.only(top: 8, bottom: 4, right: 8),
+      height: 45,
+      padding: const EdgeInsets.only(top: 4, bottom: 4, right: 8),
       child: Row(
         children: [
-          Expanded(
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _allTags.length,
-              itemBuilder: (context, index) {
-                final tag = _allTags[index];
-                final isSelected = tag == _selectedTag;
-                
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: FilterChip(
-                    label: Text(tag),
-                    selected: isSelected,
-                    selectedColor: _getTagColor(tag).withOpacity(0.1),
-                    checkmarkColor: _getTagColor(tag),
-                    backgroundColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(color: isSelected ? _getTagColor(tag) : Colors.grey[300]!),
-                    ),
-                    labelStyle: TextStyle(
-                      color: isSelected ? _getTagColor(tag) : Colors.black87,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    onSelected: (selected) {
-                      setState(() {
-                        _selectedTag = tag;
-                        _loadData(); // 重新按标拉取
-                      });
-                    },
-                  ),
-                );
-              },
-            ),
+          // 科目下拉按钮
+          _buildMultiSelectDropdown(
+            label: '科目',
+            options: _allTags,
+            selectedValues: _selectedTags,
+            onChanged: (values) {
+              setState(() {
+                _loadData();
+              });
+            },
           ),
-          const VerticalDivider(width: 1, indent: 8, endIndent: 8),
+          const SizedBox(width: 8),
+          // 复习状态下拉按钮
+          _buildMultiSelectDropdown(
+            label: '复习状态',
+            options: _allStatuses,
+            selectedValues: _selectedStatuses,
+            onChanged: (values) {
+              setState(() {
+                _loadData();
+              });
+            },
+          ),
+          const Spacer(),
+          // 时间筛选 (保留)
           IconButton(
             icon: Icon(
               _selectedDateRange != null ? Icons.today_rounded : Icons.calendar_month_outlined,
@@ -908,7 +959,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (range != null) {
                 setState(() {
                   _selectedDateRange = range;
-                  _loadData(); // 触发本地时间过滤
+                  _loadData();
                 });
               }
             },
@@ -926,6 +977,99 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMultiSelectDropdown({
+    required String label,
+    required List<String> options,
+    required Set<String> selectedValues,
+    required ValueChanged<Set<String>> onChanged,
+  }) {
+    final bool hasSelection = selectedValues.isNotEmpty;
+    final String displayLabel = hasSelection ? '$label (${selectedValues.length})' : label;
+    
+    return PopupMenuButton<String>(
+      child: Chip(
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayLabel,
+              style: TextStyle(
+                color: hasSelection ? Theme.of(context).primaryColor : Colors.black87,
+                fontWeight: hasSelection ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 18,
+              color: hasSelection ? Theme.of(context).primaryColor : Colors.black54,
+            ),
+          ],
+        ),
+        backgroundColor: hasSelection ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: hasSelection ? Theme.of(context).primaryColor : Colors.grey[300]!),
+        ),
+      ),
+      itemBuilder: (BuildContext context) {
+        return [
+          PopupMenuItem<String>(
+            enabled: false, // 关键：防止点击时菜单关闭
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                return SizedBox(
+                  width: 200,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 全选选项
+                      CheckboxListTile(
+                        title: const Text('全选', style: TextStyle(fontWeight: FontWeight.bold)),
+                        value: selectedValues.length == options.length && options.isNotEmpty,
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              selectedValues.addAll(options);
+                            } else {
+                              selectedValues.clear();
+                            }
+                          });
+                          onChanged(selectedValues);
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ...options.map((String option) {
+                        final isSelected = selectedValues.contains(option);
+                        return CheckboxListTile(
+                          title: Text(option),
+                          value: isSelected,
+                          dense: true,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: (bool? value) {
+                            setState(() { // 更新弹窗内的状态
+                              if (value == true) {
+                                selectedValues.add(option);
+                              } else {
+                                selectedValues.remove(option);
+                              }
+                            });
+                            onChanged(selectedValues); // 通知外部更新
+                          },
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ];
+      },
     );
   }
 

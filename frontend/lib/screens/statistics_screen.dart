@@ -5,8 +5,9 @@ import '../services/api_service.dart';
 
 class StatisticsScreen extends StatefulWidget {
   final ValueNotifier<bool>? refreshNotifier;
+  final Function(String)? onStatusSelected; // 新增：状态选择回调
   
-  const StatisticsScreen({this.refreshNotifier, Key? key}) : super(key: key);
+  const StatisticsScreen({this.refreshNotifier, this.onStatusSelected, Key? key}) : super(key: key);
 
   @override
   _StatisticsScreenState createState() => _StatisticsScreenState();
@@ -318,17 +319,38 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildLegendItem(String label, Color color, int count) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 8),
-          Text('$label ($count)'),
-        ],
+    return InkWell(
+      onTap: () {
+        if (widget.onStatusSelected != null) {
+          final status = _mapChineseToEnglishStatus(label);
+          if (status != null) {
+            widget.onStatusSelected!(status);
+          }
+        }
+      },
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text('$label ($count)'),
+          ],
+        ),
       ),
     );
+  }
+
+  String? _mapChineseToEnglishStatus(String chinese) {
+    switch (chinese) {
+      case '待复习': return 'unreviewed';
+      case '完全掌握': return 'mastered';
+      case '仍然模糊': return 'blurry';
+      case '未掌握': return 'unmastered';
+      default: return null;
+    }
   }
 
   Widget _buildFilterChip(String label, String value) {
