@@ -16,7 +16,7 @@ router = APIRouter(
 )
 
 PROJECT_ID = settings.PROJECT_ID
-db = firestore.Client(project=PROJECT_ID)
+db = firestore.Client(project=PROJECT_ID, database=settings.FIRESTORE_DATABASE)
 
 # Interval logic based on SM-2 simplified
 INTERVALS = [1, 2, 4, 7, 15, 30, 60]

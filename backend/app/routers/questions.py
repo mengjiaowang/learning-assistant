@@ -19,7 +19,7 @@ from app.config import settings
 
 # 初始化 GCP 客户端
 PROJECT_ID = settings.PROJECT_ID
-db = firestore.Client(project=PROJECT_ID)
+db = firestore.Client(project=PROJECT_ID, database=settings.FIRESTORE_DATABASE)
 storage_client = storage.Client(project=PROJECT_ID)
 
 # 建议在 GCP bucket 命名时带上项目名防止冲突

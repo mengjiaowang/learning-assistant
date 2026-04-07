@@ -4,6 +4,7 @@ from typing import Optional
 class Settings(BaseSettings):
     # GCP Configuration
     PROJECT_ID: str = "learning-assistant-490905"
+    FIRESTORE_DATABASE: str = "mistake-mentor-db"
     
     # Model Names
     ERASURE_MODEL: str = "gemini-3.1-flash-image-preview"
