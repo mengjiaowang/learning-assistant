@@ -11,7 +11,7 @@ from app.config import settings
 async def test_query_with_order_by():
     """验证 Firestore 查询是否需要复合索引"""
     try:
-        db = firestore.AsyncClient(project=settings.PROJECT_ID, database=settings.FIRESTORE_DATABASE)
+        db = firestore.AsyncClient(project=settings.PROJECT_ID, database=settings.MISTAKE_MENTOR_FIRESTORE_DB)
         query = db.collection("questions")\
                   .where("user_id", "==", "admin")\
                   .order_by("created_at", direction=firestore.Query.DESCENDING)\

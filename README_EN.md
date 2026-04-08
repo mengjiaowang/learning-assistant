@@ -1,125 +1,113 @@
 [English](README_EN.md) | [中文](README.md)
 
-# MistakeMentor - Smart Review Notebook
+# Learning Assistant Platform
 
-`MistakeMentor` is an AI-powered smart incorrect question management and revision tool designed specifically for home learning environments. It has fully integrated end-to-end support for pixel-level hand-writing erasure, structured extraction, and immersive tablet revision dashboards.
-
----
-
-## 📖 1. Project Overview & Core Features
-
-The purpose of this project is to reduce the time cost for students to organize mistake collections. By capturing photos with a mobile phone and leveraging Google Cloud's advanced image processing and Large Multimodal Models (Vertex AI):
-
-1. **Restore Blank Questions**: Use advanced multi-modal visual models to automatically erase handwritten answers and correction marks from images pixel by pixel.
-2. **Formula & Text Digitization**: Use `Gemini 3.1` to extract text and accurately format math formulas into standard `LaTeX` notation.
-3. **Socratic AI Explanations & Variation Generation**: Guide students through reasoning without giving answers directly, and generate "analogous questions". **Similar questions are now collapsible** for a cleaner interface.
-4. **Immersive TTS (Text-to-Speech)**: Integrated Google Cloud TTS (Neural2/Studio) for high-quality audio playback of problem explanations.
-5. **Multi-Theme Support (Eye-Care Mode)**: Offers light, dark, and a specially designed **blue-light filtering eye-care theme** for prolonged study sessions.
-6. **Batch Management**: Supports batch deletion and restoration of questions directly from the Recycle Bin.
-7. **Smart Review System (Ebbinghaus/SM-2 algorithm)**: Dynamically calculates the next review date based on the level of mastery (mastered, blurry, not mastered) to reinforce knowledge points.
-8. **Dashboard Statistics & Rich Charting Analytics**: Comprehensive view of incorrect question distribution, categorized by subject and active review trend analysis (for the last 7 days).
+`Learning Assistant` is an intelligent learning support platform designed for family scenarios, featuring "high-powered AI assistance, multi-module integration, and immersive learning." The platform currently contains two core applications and supports future expansion.
 
 ---
 
-## 🛠️ 2. Technical Architecture & Core Modules
+## 📖 1. Core Functional Modules
 
-### 🖥️ 2.1 Backend API Architecture (`/backend`)
+### 📝 Mistake Mentor
+Designed to solve the time-consuming and laborious problem of students organizing mistake sets:
+1. **Restore Blank Questions**: Pixel-level erasure of handwritten corrections and answer traces through Google Cloud's multimodal visual large model.
+2. **Precise Digitization of Formulas and Text**: Use `Gemini 3.1` to extract text and align `LaTeX` formula symbols.
+3. **Heuristic AI Analysis and One-click "Draw Inferences"**: Do not give answers directly, but give step-by-step reasoning and similar variant training questions. Learn a class by doing one question.
+4. **Immersive Voice Broadcast (TTS)**: Integrate Google Cloud TTS to support high-quality reading of question analysis.
 
-A lightweight & serverless monolithic architecture on **Google Cloud Run (FastAPI)**.
-
-- [**`app/services/gcp_ai_service.py`**](backend/app/services/gcp_ai_service.py)
-  - Integrates **Vertex AI**. Leverages multi-modal models to clean up strokes, formats to JSON using `Gemini`, and handles high-fidelity voice synthesis using Cloud TTS.
-- [**`app/routers/questions.py`**](backend/app/routers/questions.py)
-  - Serves the main API endpoints for secure photo uploads linking directly into **Cloud Storage (GCS)** and metadata pipelines into **Firestore**. Uses efficient memory-based sorting for complex tag filtering.
-
-### 📱 2.2 Frontend Client Architecture (`/frontend`)
-
-Built using **Flutter**, supports highly adaptive responsive layouts for Mobile, Tablet, and Web.
-
-- `lib/services/api_service.dart`: Restful bridge wrapper, auto-validates requests with safe lock using JWT.
-- `lib/screens/dashboard_screen.dart`: Complete Modal workflow for tablet overview sheet lists, featuring built-in TTS controls and dynamic themes.
-- `lib/screens/capture_screen.dart`: Trigger standard camera for lightweight pipeline routing to endpoint.
-- `lib/theme.dart`: Global theme engine managing dynamic color palettes securely across environments.
+### 🔤 Word Buddy
+A word memorization application designed for children (aged 6-12):
+1. **Intelligent OCR Extraction**: Take a photo of a textbook or test paper, intelligently identify and extract core vocabulary, and filter out meaningless function words.
+2. **Child-friendly Analysis**: Use vivid language to generate natural phonics, fun roots, and example sentences for words.
+3. **Smart Quiz Generation**: Generate fun multiple-choice questions for each word based on the large model to consolidate memory.
+4. **Leitner Review System**: Dynamically adjust the review cycle based on the degree of mastery.
 
 ---
 
-## 💻 3. Local Development & Debugging (Using `uv`)
+## 🛠️ 2. Technical Architecture
 
-### ⚠️ Prerequisite Before Running AI Services Locally
+### 🖥️ Backend Architecture (`/apps`)
+Based on **FastAPI (Python)** deployed on **Google Cloud Run**, adopting a multi-service architecture:
+*   **Mistake Mentor** (`apps/mistake_mentor`): Provides mistake processing, OCR analysis, and TTS services.
+*   **Word Buddy** (`apps/word_buddy`): Provides word management, child-friendly analysis, and quiz generation services.
 
-Vertex AI services maintain credential locking. Before testing the backend, run this command in your Mac terminal for temporary fetch configuration:
+### 📱 Frontend Client Architecture (`/frontend`)
+Built with **Flutter**, supporting Web, tablet, and large screen devices.
+*   Enter different application modules through a unified navigation page.
+*   Use Firebase Hosting's Rewrites rules to achieve smart distribution to different Cloud Run backends by path.
 
+---
+
+## 💻 3. Local Development and Debugging
+
+### ⚠️ Must Read Before Calling AI Interfaces in Local Environment
+Calling Vertex AI has preset permission verification. Before starting to test the backend, please open your Mac terminal to pull local credentials with one click:
 ```bash
 gcloud auth application-default login
+firebase login --reauth
 ```
 
 ### 3.1 Step 1: Create and Activate Virtual Environment
-
 ```bash
-# 1. Ensure uv is installed (e.g., brew install uv)
+# Ensure uv is installed
 uv venv
-
-# 2. Activate virtual environment (macOS/Linux)
 source .venv/bin/activate
 ```
 
 ### 3.2 Step 2: Install Dependency Packages
-
 ```bash
-# Install requirements.txt extremely fast with uv
-uv pip install -r backend/requirements.txt
+# Install Mistake Mentor dependencies
+uv pip install -r apps/mistake_mentor/requirements.txt
+# Install Word Buddy dependencies
+uv pip install -r apps/word_buddy/requirements.txt
 ```
 
-### 3.3 Step 3: Start Local FastAPI Server
+### 3.3 Step 3: Start Local Backend Services
+To avoid port conflicts, please start the two services on different ports:
 
+*   **Start Mistake Mentor Backend** (using port 8000):
+    ```bash
+    cd apps/mistake_mentor
+    uvicorn app.main:app --reload --port 8000
+    ```
+*   **Start Word Buddy Backend** (using port 8001):
+    ```bash
+    cd apps/word_buddy
+    uvicorn main:app --reload --port 8001
+    ```
+
+### 3.4 Step 4: Frontend Local Development and Debugging (Flutter)
 ```bash
-cd backend
-uvicorn app.main:app --reload --port 8000
-```
-
-- **API Documentation**: Visibly test endpoints on `http://127.0.0.1:8000/docs` inside Swagger UI.
-
-### 3.4 Step 4: Local Frontend Debugging (Flutter)
-
-Ensure you have the [Flutter SDK](https://docs.flutter.dev/get-started/install) installed locally.
-
-```bash
-# 1. Enter the frontend directory
 cd frontend
-
-# 2. Fetch dependencies
 flutter pub get
-
-# 3. Run the application locally in Chrome for debugging
 flutter run -d chrome
 ```
-
-> 💡 **Tip**: The default `baseUrl` connects to local `http://127.0.0.1:8000`. To access cloud endpoints, modify the configuration variable in `lib/services/api_service.dart`.
+> 💡 **Tip**: The frontend has been configured with environment smart switching. When running locally, it will automatically connect to local ports `8000` and `8001`; after deploying to Firebase, it will automatically use relative paths distributed by the cloud.
 
 ---
 
-## 🚢 4. Full-Stack Cloud Deployment
+## 🚢 4. Cloud Full-stack One-click Deployment
 
-The project provides an automated build and deploy script to push the backend to **Google Cloud Run** and the frontend to **Firebase Hosting**.
-
-### One-Click Deploy Command
-
-Ensure you have both `gcloud` and `firebase-tools` configured locally:
+The project provides a one-click compilation and release script, supporting on-demand deployment:
 
 ```bash
-# Run from the project root directory (deploys both by default)
-./deploy.sh
+# Grant execution permissions
+chmod +x deploy.sh
 
-# Optional standalone deployment:
-./deploy.sh backend   # Deploy only backend
-./deploy.sh frontend  # Deploy only frontend
+# Deploy all content (Frontend + Backend)
+./deploy.sh all
+
+# Independently deploy specific modules:
+./deploy.sh mistake_mentor  # Deploy only Mistake Mentor backend
+./deploy.sh word_buddy      # Deploy only Word Buddy backend
+./deploy.sh frontend        # Deploy only frontend
 ```
 
-The script will automatically enable necessary APIs, push backend images to Tokyo (`asia-northeast1`), compile the Flutter Web Release, and synchronize files with Firebase.
+The script will automatically handle the creation of Artifact Registry image repositories, Cloud Build image compilation, and Cloud Run deployment.
 
 ---
 
-## 🔑 5. Built-in Test Account Settings
+## 🔑 5. Built-in Super Test Account
 
-- **Username**: `admin`
-- **Password**: `admin123`
+*   **Username**: `admin`
+*   **Password**: Please check `ADMIN_PASSWORD` in your local `.env` file.

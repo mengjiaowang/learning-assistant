@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import '../main.dart';
+import 'package:mistake_mentor/main.dart';
+import 'package:mistake_mentor/navigation/app_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -34,7 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (mounted) {
            Navigator.pushReplacement(
              context,
-             MaterialPageRoute(builder: (context) => const MainNavigationShell()),
+             MaterialPageRoute(builder: (context) => const AppSelectionScreen()),
            );
         }
       } else {
@@ -91,7 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                '智能错题本 - 扫除知识盲区',
+                '学习助手 - 扫除知识盲区',
                 style: TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 48),

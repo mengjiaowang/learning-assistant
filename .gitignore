@@ -22,3 +22,4 @@ build/
 
 # Firebase 文件
 frontend/.firebase/*
+scratch/*

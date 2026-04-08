@@ -10,7 +10,7 @@ import 'package:flutter_math_fork/flutter_math.dart'; // 导入公式渲染包
 import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
-import '../main.dart'; // 引入 themeNotifier
+import 'package:mistake_mentor/main.dart'; // 引入 themeNotifier
 
 // 自定义混合文本渲染控件 (支持行内 $...$ 公式)
 class MathText extends StatelessWidget {

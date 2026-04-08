@@ -71,7 +71,7 @@ class GCPQuestionsAIService:
         image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
 
         response = self.client.models.generate_content(
-            model=settings.OCR_MODEL,
+            model=settings.GEMINI_MODEL_NAME,
             contents=[image_part, prompt_content],
             config=types.GenerateContentConfig(
                 temperature=0.2, 

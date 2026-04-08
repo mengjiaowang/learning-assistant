@@ -8,9 +8,16 @@
     ],
     "rewrites": [
       {
-        "source": "/api/**",
+        "source": "/api/v1/**",
         "run": {
           "serviceId": "mistakementor-backend",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "wordbuddy-backend",
           "region": "asia-northeast1"
         }
       },

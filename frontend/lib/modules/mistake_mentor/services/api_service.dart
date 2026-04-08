@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../models/question_model.dart';
 import 'package:flutter/material.dart';
 import '../screens/login_screen.dart';
-import '../main.dart';
+import 'package:mistake_mentor/main.dart';
 
 class ApiService {
   static const String baseUrl = kDebugMode ? 'http://127.0.0.1:8000' : '';

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'screens/login_screen.dart';
+import 'modules/mistake_mentor/screens/login_screen.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'screens/dashboard_screen.dart';
-import 'screens/capture_screen.dart';
-import 'screens/review_session_screen.dart';
-import 'screens/statistics_screen.dart';
-import 'services/api_service.dart';
+import 'modules/mistake_mentor/screens/dashboard_screen.dart';
+import 'modules/mistake_mentor/screens/capture_screen.dart';
+import 'modules/mistake_mentor/screens/review_session_screen.dart';
+import 'modules/mistake_mentor/screens/statistics_screen.dart';
+import 'modules/mistake_mentor/services/api_service.dart';
 
-import 'theme.dart'; // 引入主题
+import 'modules/mistake_mentor/theme.dart'; // 引入主题
+import 'navigation/app_selection_screen.dart'; // 引入导航页
 import 'package:image_picker/image_picker.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -77,7 +78,7 @@ class _RootScreenState extends State<RootScreen> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    return _isAuthenticated ? const MainNavigationShell() : const LoginScreen();
+    return _isAuthenticated ? const AppSelectionScreen() : const LoginScreen();
   }
 }
 

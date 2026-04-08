@@ -7,8 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
-
-import '../main.dart';
+import 'package:mistake_mentor/main.dart';
 
 class CaptureScreen extends StatefulWidget {
   final List<CameraDescription> cameras;

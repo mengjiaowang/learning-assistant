@@ -11,19 +11,21 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.6
+  cupertino_icons: ^1.0.8
   
   # 网络请求和存储
   dio: ^5.4.0
+  http: ^1.6.0
   flutter_secure_storage: ^9.0.0 # 用于持久化 JWT Token
   
   # 状态管理
   provider: ^6.1.1
+  flutter_riverpod: ^2.5.1
   
   # UI 组件与图片加载
   cached_network_image: ^3.3.1
   camera: ^0.10.5+5
-  image_picker: ^1.1.2
+  image_picker: ^1.2.1
   
   # 理科公式渲染支持 (LaTeX)
   flutter_math_fork: 0.7.4

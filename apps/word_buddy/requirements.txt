@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+google-cloud-aiplatform
+python-dotenv
+pydantic
+google-cloud-firestore
+python-multipart
+pyOpenSSL
+nltk

@@ -1,17 +1,18 @@
 #!/bin/bash
 
 # ==========================================
-# 智能错题本 - 部署脚本 (Frontend + Backend)
+# 学习助手 (Learning Assistant) - 部署脚本
 # ==========================================
 
 USAGE="
 用法: ./deploy.sh [target]
 
 目标 (target):
-  all       部署前后端 (默认)
-  backend   仅部署后端到 Cloud Run
-  frontend  仅部署前端 Web 到 Firebase Hosting
-  help      显示此帮助信息
+  all             部署所有后端和前端 (默认)
+  mistake_mentor  仅部署错题本后端
+  word_buddy      仅部署单词助手后端
+  frontend        仅部署前端 Web 到 Firebase Hosting
+  help            显示此帮助信息
 "
 
 TARGET=${1:-all}
@@ -21,14 +22,15 @@ if [ "$TARGET" == "help" ]; then
     exit 0
 fi
 
-if [[ "$TARGET" != "all" && "$TARGET" != "backend" && "$TARGET" != "frontend" ]]; then
+VALID_TARGETS=("all" "mistake_mentor" "word_buddy" "frontend")
+if [[ ! " ${VALID_TARGETS[@]} " =~ " ${TARGET} " ]]; then
     echo "❌ 错误: 无效的目标参数 '$TARGET'"
     echo "$USAGE"
     exit 1
 fi
 
 # ==========================================
-# 授权检查 (Pre-flight Auth Checks)
+# 授权检查
 # ==========================================
 echo "🔍 检查 Google Cloud 授权状态..."
 if ! gcloud auth application-default print-access-token >/dev/null 2>&1 && ! gcloud auth print-access-token >/dev/null 2>&1; then
@@ -56,75 +58,106 @@ fi
 
 if [ -z "$PROJECT_ID" ]; then
     echo "❌ 错误: 未设置 PROJECT_ID 环境变量！"
-    echo "💡 请创建 .env 文件并配置 PROJECT_ID=您的项目ID ，或者直接在此脚本外 export PROJECT_ID=..."
+    echo "💡 请在 .env 文件中配置 PROJECT_ID"
     exit 1
 fi
+
+REGION="asia-northeast1"
+REPO_NAME="learning-assistant-docker"
 
 echo "========================================"
 echo "🚀 开始部署 [ $PROJECT_ID ] | 模式: $TARGET"
 echo "========================================"
 
-# 1. 设置当前项目
 gcloud config set project $PROJECT_ID
 
-# 2. 部署后端 (Cloud Run)
-if [[ "$TARGET" == "all" || "$TARGET" == "backend" ]]; then
-    echo ""
-    echo "----------------------------------------"
-    echo "📦 正在部署后端 (Cloud Run)..."
-    echo "----------------------------------------"
-    if [ -f "backend/deploy.sh" ]; then
-        cd backend
-        # 赋予执行权限以防万一
-        chmod +x deploy.sh
-        ./deploy.sh
-        cd ..
+# 创建 Artifact Registry 仓库 (如果不存在)
+if [[ "$TARGET" == "all" || "$TARGET" == "mistake_mentor" || "$TARGET" == "word_buddy" ]]; then
+    echo "📦 正在检查并创建 Artifact Registry 镜像仓库..."
+    if ! gcloud artifacts repositories describe $REPO_NAME --location=$REGION > /dev/null 2>&1; then
+        gcloud artifacts repositories create $REPO_NAME \
+            --repository-format=docker \
+            --location=$REGION \
+            --description="Learning Assistant Docker Repo"
+        echo "✅ 镜像仓库 $REPO_NAME 创建成功！"
     else
-        echo "❌ 错误: 未找到 backend/deploy.sh 脚本！"
-        exit 1
+        echo "ℹ️ 镜像仓库 $REPO_NAME 已存在。"
     fi
-else
-    echo ""
-    echo "⏩ 跳过后端部署..."
 fi
 
-# 3. 部署前端 (Firebase Hosting)
+# 1. 部署 Mistake Mentor 后端
+if [[ "$TARGET" == "all" || "$TARGET" == "mistake_mentor" ]]; then
+    echo ""
+    echo "----------------------------------------"
+    echo "📦 正在部署 Mistake Mentor 后端 (Cloud Run)..."
+    echo "----------------------------------------"
+    cd apps/mistake_mentor
+    
+    SERVICE_NAME="mistakementor-backend"
+    IMAGE_TAG="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$SERVICE_NAME"
+    
+    echo "🛠️ 正在使用 Cloud Build 提交构建..."
+    gcloud builds submit --tag $IMAGE_TAG .
+    
+    echo "🚢 正在发布到 Cloud Run..."
+    gcloud run deploy $SERVICE_NAME \
+      --image $IMAGE_TAG \
+      --platform managed \
+      --region $REGION \
+      --allow-unauthenticated \
+      --cpu 1 \
+      --memory 4Gi \
+      --port 8080 \
+      --set-env-vars "PROJECT_ID=$PROJECT_ID,MISTAKE_MENTOR_FIRESTORE_DB=$MISTAKE_MENTOR_FIRESTORE_DB,SECRET_KEY=$SECRET_KEY,ADMIN_PASSWORD=$ADMIN_PASSWORD,ADMIN_USERNAME=$ADMIN_USERNAME,ACCESS_TOKEN_EXPIRE_MINUTES=$ACCESS_TOKEN_EXPIRE_MINUTES,ERASURE_MODEL=$ERASURE_MODEL,GEMINI_MODEL_NAME=$GEMINI_MODEL_NAME"
+      
+    cd ../..
+fi
+
+# 2. 部署 Word Buddy 后端
+if [[ "$TARGET" == "all" || "$TARGET" == "word_buddy" ]]; then
+    echo ""
+    echo "----------------------------------------"
+    echo "📦 正在部署 Word Buddy 后端 (Cloud Run)..."
+    echo "----------------------------------------"
+    cd apps/word_buddy
+    
+    SERVICE_NAME="wordbuddy-backend"
+    IMAGE_TAG="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$SERVICE_NAME"
+    
+    echo "🛠️ 正在使用 Cloud Build 提交构建..."
+    gcloud builds submit --tag $IMAGE_TAG .
+    
+    echo "🚢 正在发布到 Cloud Run..."
+    gcloud run deploy $SERVICE_NAME \
+      --image $IMAGE_TAG \
+      --platform managed \
+      --region $REGION \
+      --allow-unauthenticated \
+      --cpu 1 \
+      --memory 2Gi \
+      --port 8080 \
+      --set-env-vars "PROJECT_ID=$PROJECT_ID,WORD_BUDDY_FIRESTORE_DB=$WORD_BUDDY_FIRESTORE_DB,SECRET_KEY=$SECRET_KEY,GEMINI_MODEL_NAME=$GEMINI_MODEL_NAME"
+      
+    cd ../..
+fi
+
+# 3. 部署前端
 if [[ "$TARGET" == "all" || "$TARGET" == "frontend" ]]; then
     echo ""
     echo "----------------------------------------"
     echo "🌐 正在部署前端 (Firebase Hosting)..."
     echo "----------------------------------------"
-    if [ -d "frontend" ]; then
-        cd frontend
-        if [ -f "pubspec.yaml" ]; then
-            echo "🛠️ 正在清理并打包 Flutter Web (Release 模式)..."
-            flutter clean
-            flutter pub get
-            flutter build web --release
-            
-            echo "🚀 正在推送到 Firebase Hosting..."
-            firebase deploy --only hosting --project $PROJECT_ID
-        else
-            echo "❌ 错误: 未在 frontend 目录下找到 Flutter 配置 (pubspec.yaml)！"
-            cd ..
-            exit 1
-        fi
-        cd ..
-    else
-        echo "❌ 错误: 未找到 frontend 目录！"
-        exit 1
-    fi
-else
-    echo ""
-    echo "⏩ 跳过前端部署..."
+    cd frontend
+    echo "🛠️ 正在清理并打包 Flutter Web (Release 模式)..."
+    flutter clean
+    flutter pub get
+    flutter build web --release
+    
+    echo "🚀 正在推送到 Firebase Hosting..."
+    firebase deploy --only hosting --project $PROJECT_ID
+    cd ..
 fi
 
-echo ""
 echo "========================================"
-if [[ "$TARGET" == "all" || "$TARGET" == "frontend" ]]; then
-    echo "🎉 部署完成！"
-    echo "🔗 请通过 Firebase Hosting 域名访问您的应用。"
-else
-    echo "🎉 后端部署完成！"
-fi
+echo "🎉 部署流程结束！"
 echo "========================================"
