@@ -24,10 +24,11 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
   List<QuestionModel> _questions = [];
   int _currentIndex = 0;
 
-  // 新增：科目配置状态
+  // 科目与年级配置状态
   bool _isConfiguring = true;
   List<String> _availableTags = [];
   List<String> _selectedSubjects = [];
+  List<int> _selectedGrades = [];
   bool _isFreeMode = false;
   
   @override
@@ -65,9 +66,10 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
     });
     
     try {
+      final gradesFilter = _selectedGrades.isEmpty ? null : _selectedGrades;
       final questions = isFree
-          ? await apiService.fetchFreeBatch(_selectedSubjects)
-          : await apiService.fetchReviewBatch(subjects: _selectedSubjects, limit: 15);
+          ? await apiService.fetchFreeBatch(_selectedSubjects, grades: gradesFilter)
+          : await apiService.fetchReviewBatch(subjects: _selectedSubjects, grades: gradesFilter, limit: 15);
       setState(() {
         _questions = questions;
         _isLoading = false;
@@ -190,8 +192,28 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // 正面：题目
-                      Center(
-                        child: Text('题干', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey[500])),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _getGradeColor(item.grade).withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: _getGradeColor(item.grade).withOpacity(0.4)),
+                            ),
+                            child: Text(
+                              _formatGrade(item.grade),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _getGradeColor(item.grade),
+                              ),
+                            ),
+                          ),
+                          Text('题干', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey[500])),
+                          const SizedBox(width: 48),
+                        ],
                       ),
                       const Divider(),
                       if (item.imageBlank.isNotEmpty || item.imageOriginal.isNotEmpty) ...[
@@ -388,6 +410,36 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
     );
   }
 
+  String _formatGrade(int? grade) {
+    if (grade == null) {
+      debugPrint('[DATA_INTEGRITY] Question grade is null');
+      return '未设年级';
+    }
+    switch (grade) {
+      case 1: return '一年级';
+      case 2: return '二年级';
+      case 3: return '三年级';
+      case 4: return '四年级';
+      case 5: return '五年级';
+      case 6: return '六年级';
+      default:
+        debugPrint('[DATA_INTEGRITY] Unrecognized grade value: $grade');
+        return '$grade年级';
+    }
+  }
+
+  Color _getGradeColor(int? grade) {
+    switch (grade) {
+      case 1: return Colors.indigo;
+      case 2: return Colors.deepPurple;
+      case 3: return Colors.teal;
+      case 4: return Colors.amber.shade800;
+      case 5: return Colors.blueGrey;
+      case 6: return Colors.brown;
+      default: return Colors.grey;
+    }
+  }
+
   Widget _buildConfigView() {
     return Scaffold(
       appBar: AppBar(title: const Text('科目与模式配置'), centerTitle: true),
@@ -396,6 +448,32 @@ class _ReviewSessionScreenState extends State<ReviewSessionScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('🎒 请选择年级（多选，默认全部）', 
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Theme.of(context).primaryColor)),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [1, 2, 3, 4, 5, 6].map((g) {
+                final isSelected = _selectedGrades.contains(g);
+                return FilterChip(
+                  label: Text(_formatGrade(g)),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedGrades.add(g);
+                      } else {
+                        _selectedGrades.remove(g);
+                      }
+                    });
+                  },
+                  selectedColor: _getGradeColor(g).withOpacity(0.2),
+                  checkmarkColor: _getGradeColor(g),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 24),
             Text('📚 请选择要复习的科目（多选）', 
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Theme.of(context).primaryColor)),
             const SizedBox(height: 16),

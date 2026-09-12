@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 class QuestionModel {
   final String id;
@@ -16,7 +17,8 @@ class QuestionModel {
   final int currentInterval;
   final List<dynamic>? reviewHistory;
   final String createdAt;
-  final List<String> tags; // 新增：标签列表
+  final List<String> tags; // 标签列表
+  final int? grade; // 年级 (1: 一年级, 2: 二年级...)
 
   QuestionModel({
     required this.id,
@@ -35,9 +37,17 @@ class QuestionModel {
     this.reviewHistory,
     required this.createdAt,
     required this.tags,
+    this.grade,
   });
 
   factory QuestionModel.fromJson(Map<String, dynamic> json) {
+    int? grade;
+    if (json['grade'] != null) {
+      grade = json['grade'] as int;
+    } else {
+      debugPrint('[Data Integrity Warning] Question ${json['id']} is missing "grade" field.');
+    }
+
     return QuestionModel(
       id: json['id'] ?? '',
       imageOriginal: json['image_original'] ?? '',
@@ -55,6 +65,7 @@ class QuestionModel {
       reviewHistory: json['review_history'] != null ? List<dynamic>.from(json['review_history']) : [],
       createdAt: json['created_at'] ?? '',
       tags: json['tags'] != null ? List<String>.from(json['tags']) : [],
+      grade: grade,
     );
   }
 
@@ -76,6 +87,7 @@ class QuestionModel {
       'review_history': reviewHistory,
       'created_at': createdAt,
       'tags': tags,
+      'grade': grade,
     };
   }
 }

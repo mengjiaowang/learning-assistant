@@ -1,6 +1,9 @@
 import uuid
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
@@ -25,6 +28,7 @@ INTERVALS = [1, 2, 4, 7, 15, 30, 60]
 async def get_review_batch(
     current_user: User = Depends(get_current_user),
     subjects: Optional[List[str]] = Query(None), # 允许用户多选科目
+    grades: Optional[List[int]] = Query(None), # 允许用户多选年级
     limit: int = Query(15, ge=1, le=50)
 ):
     """
@@ -63,6 +67,11 @@ async def get_review_batch(
 
         for doc in due_docs:
             data = doc.to_dict()
+            if "grade" not in data:
+                logger.warning(f"[Data Integrity Warning] Question {data.get('id')} has no 'grade' field.")
+            if grades and data.get("grade") not in grades:
+                continue
+
             score = 0
             if data.get("status") in ["unmastered", "blurry"]:
                 score = 100
@@ -74,6 +83,11 @@ async def get_review_batch(
 
         for doc in unrev_docs:
             data = doc.to_dict()
+            if "grade" not in data:
+                logger.warning(f"[Data Integrity Warning] Question {data.get('id')} has no 'grade' field.")
+            if grades and data.get("grade") not in grades:
+                continue
+
             if data["id"] not in results_map:
                 results_map[data["id"]] = {"data": data, "score": 50}
 
@@ -90,6 +104,7 @@ async def get_review_batch(
 async def get_free_batch(
     current_user: User = Depends(get_current_user),
     subjects: Optional[List[str]] = Query(None),
+    grades: Optional[List[int]] = Query(None),
     limit: int = Query(50, ge=1, le=100) # 限额切片下发以防卡顿
 ):
     """
@@ -110,6 +125,10 @@ async def get_free_batch(
     final_batch = []
     for doc in docs:
         data = doc.to_dict()
+        if "grade" not in data:
+            logger.warning(f"[Data Integrity Warning] Question {data.get('id')} has no 'grade' field.")
+        if grades and data.get("grade") not in grades:
+            continue
         if data.get("status") != "mastered":
             final_batch.append(data)
         if len(final_batch) >= limit:
@@ -191,6 +210,7 @@ async def submit_review(
 async def get_statistics(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    grades: Optional[List[int]] = Query(None),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -213,11 +233,19 @@ async def get_statistics(
     # 2. Subject Breakdown
     subjects = {}
     
-    # 3. Time Trends (activity by day)
+    # 3. Grade Breakdown
+    grade_breakdown = {}
+
+    # 4. Time Trends (activity by day)
     activity = {}
     
     for doc in docs:
         data = doc.to_dict()
+        if "grade" not in data:
+            logger.warning(f"[Data Integrity Warning] Question {data.get('id')} has no 'grade' field.")
+        if grades and data.get("grade") not in grades:
+            continue
+
         created_at = data.get("created_at", "")
         
         # Filter by creation date if requested
@@ -242,6 +270,20 @@ async def get_statistics(
         
         if status in subjects[primary_tag]:
             subjects[primary_tag][status] += 1
+
+        # Breakdown by grade
+        grade_val = data.get("grade")
+        if grade_val is None:
+            grade_key = "未设年级"
+        else:
+            grade_map = {1: "一年级", 2: "二年级", 3: "三年级", 4: "四年级", 5: "五年级", 6: "六年级"}
+            grade_key = grade_map.get(grade_val, f"{grade_val}年级")
+
+        if grade_key not in grade_breakdown:
+            grade_breakdown[grade_key] = {"total": 0, "mastered": 0, "blurry": 0, "unmastered": 0, "unreviewed": 0}
+        grade_breakdown[grade_key]["total"] += 1
+        if status in grade_breakdown[grade_key]:
+            grade_breakdown[grade_key][status] += 1
             
         # Activity trend
         for entry in history:
@@ -259,7 +301,6 @@ async def get_statistics(
     if start_date and end_date:
         try:
             # Parse dates to calculate delta
-            # Assuming 'Z' or standard ISO format from frontend
             s_dt = datetime.fromisoformat(start_date.split('T')[0])
             e_dt = datetime.fromisoformat(end_date.split('T')[0])
             delta = (e_dt - s_dt).days + 1
@@ -269,11 +310,11 @@ async def get_statistics(
                 delta = 90
             base_date = e_dt
         except Exception as e:
-            # Fallback to 7 days
+            logger.error(f"[Date Parsing Error] Failed to parse start_date '{start_date}' or end_date '{end_date}': {e}")
             delta = 7
             base_date = now
 
-    # If base_date is in the future relative to now, we might want to cap it.
+    # If base_date is in the future relative to now, cap it.
     if base_date > now:
         base_date = now
 
@@ -288,5 +329,6 @@ async def get_statistics(
     return {
         "overview": overview,
         "subjects": subjects,
+        "grades": grade_breakdown,
         "trends": recent_activity[::-1] # return chronological order
     }

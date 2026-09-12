@@ -97,6 +97,7 @@ from app.routers import questions, reviews
 app.include_router(questions.router)
 app.include_router(reviews.router)
 
+@app.get("/api/v1/health", tags=["System"])
 @app.get("/health", tags=["System"])
 async def health_check():
     """Cloud Run 健康检查端点"""

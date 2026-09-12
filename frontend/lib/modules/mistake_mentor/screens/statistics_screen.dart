@@ -17,6 +17,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _statsData;
   String _timeRange = 'all'; // 'all', '7days', '30days', 'custom'
+  int? _selectedGrade; // null means all grades
   DateTime? _startDate;
   DateTime? _endDate;
 
@@ -56,13 +57,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         }
       }
 
-      final stats = await apiService.fetchStatistics(startDate: startStr, endDate: endStr);
+      final gradesFilter = _selectedGrade != null ? [_selectedGrade!] : null;
+      final stats = await apiService.fetchStatistics(
+        startDate: startStr,
+        endDate: endStr,
+        grades: gradesFilter,
+      );
       setState(() {
         _statsData = stats;
         _isLoading = false;
       });
     } catch (e) {
-      print("Failed to load statistics: $e");
+      debugPrint("Failed to load statistics: $e");
       setState(() => _isLoading = false);
     }
   }
@@ -104,7 +110,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _buildFilterChip('全部', 'all'),
+                  _buildFilterChip('全部时间', 'all'),
                   const SizedBox(width: 8),
                   _buildFilterChip('最近7天', '7days'),
                   const SizedBox(width: 8),
@@ -115,6 +121,27 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     const SizedBox(width: 8),
                     Text('${_startDate!.toString().substring(5,10)} 至 ${_endDate!.toString().substring(5,10)}', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
                   ]
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildGradeFilterChip('全部年级', null),
+                  const SizedBox(width: 8),
+                  _buildGradeFilterChip('一年级', 1),
+                  const SizedBox(width: 8),
+                  _buildGradeFilterChip('二年级', 2),
+                  const SizedBox(width: 8),
+                  _buildGradeFilterChip('三年级', 3),
+                  const SizedBox(width: 8),
+                  _buildGradeFilterChip('四年级', 4),
+                  const SizedBox(width: 8),
+                  _buildGradeFilterChip('五年级', 5),
+                  const SizedBox(width: 8),
+                  _buildGradeFilterChip('六年级', 6),
                 ],
               ),
             ),
@@ -311,9 +338,102 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 )
               ),
             ),
+            if (_statsData!["grades"] != null && (_statsData!["grades"] as Map<String, dynamic>).isNotEmpty) ...[
+              const SizedBox(height: 32),
+              const Text('🎒 各年级错题分布', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: (_statsData!["grades"] as Map<String, dynamic>).entries.map((entry) {
+                      final gradeName = entry.key;
+                      final data = entry.value as Map<String, dynamic>;
+                      final total = (data['total'] as num?)?.toInt() ?? 0;
+                      final mastered = (data['mastered'] as num?)?.toInt() ?? 0;
+                      final blurry = (data['blurry'] as num?)?.toInt() ?? 0;
+                      final unmastered = (data['unmastered'] as num?)?.toInt() ?? 0;
+                      final unreviewed = (data['unreviewed'] as num?)?.toInt() ?? 0;
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(gradeName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                Text('共 $total 题', style: const TextStyle(color: Colors.blueGrey, fontSize: 13)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                height: 12,
+                                color: Colors.grey[200],
+                                child: total > 0
+                                    ? Row(
+                                        children: [
+                                          if (mastered > 0)
+                                            Expanded(flex: mastered, child: Container(color: masteredColor)),
+                                          if (blurry > 0)
+                                            Expanded(flex: blurry, child: Container(color: blurryColor)),
+                                          if (unmastered > 0)
+                                            Expanded(flex: unmastered, child: Container(color: unmasteredColor)),
+                                          if (unreviewed > 0)
+                                            Expanded(flex: unreviewed, child: Container(color: unreviewedColor)),
+                                        ],
+                                      )
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '掌握 $mastered  模糊 $blurry  未掌握 $unmastered  待复习 $unreviewed',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 40),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildGradeFilterChip(String label, int? grade) {
+    bool isSelected = _selectedGrade == grade;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (selected) {
+          setState(() {
+            _selectedGrade = grade;
+          });
+          _loadStats();
+        }
+      },
+      selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      backgroundColor: Colors.grey[200],
+      labelStyle: TextStyle(
+        color: isSelected ? Theme.of(context).primaryColor : Colors.black87,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
       ),
     );
   }

@@ -1,6 +1,9 @@
 import uuid
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form, BackgroundTasks, Query
 from google.cloud import firestore, storage
@@ -137,6 +140,7 @@ async def upload_question(
     crop_top: float = Form(0.0),
     crop_width: float = Form(1.0),
     crop_height: float = Form(1.0),
+    grade: int = Form(2), # 新增题目默认为二年级 (Grade 2)
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -144,6 +148,10 @@ async def upload_question(
     2. 下推 BackgroundTasks 异步跑大模型多模态
     3. 快速返还 processing 状态给前端
     """
+    if grade < 1 or grade > 12:
+        logger.error(f"[Security/Validation Error] User '{current_user.username}' attempted to upload question with invalid grade: {grade}")
+        raise HTTPException(status_code=400, detail="年级参数无效，必须在 1 到 12 之间")
+
     contents = await file.read()
 
     if mirror or rotate_degrees != 0 or crop_left > 0 or crop_top > 0 or crop_width < 1.0 or crop_height < 1.0:
@@ -210,6 +218,7 @@ async def upload_question(
     init_doc = {
         "id": question_uuid,
         "user_id": current_user.username,
+        "grade": grade,
         "image_original": url_original,
         "image_thumbnail": url_thumbnail,
         "image_blank": url_original, # 临时复用原图，等擦除完后覆写
@@ -242,11 +251,12 @@ async def list_questions(
     knowledge_point: Optional[str] = None,
     tags: Optional[List[str]] = Query(None), # 修改：支持多标签过滤
     statuses: Optional[List[str]] = Query(None), # 修改：支持多状态过滤
+    grades: Optional[List[int]] = Query(None), # 支持多年级过滤 (1: 一年级, 2: 二年级...)
     is_deleted: bool = False,
     limit: int = 24,
     offset: int = 0
 ):
-    """获取错题列表，支持分页、考点及标签/状态多选筛选"""
+    """获取错题列表，支持分页、考点、年级及标签/状态多选筛选"""
     query = db.collection("questions")\
               .where(filter=FieldFilter("user_id", "==", current_user.username))\
               .where(filter=FieldFilter("is_deleted", "==", is_deleted))
@@ -254,12 +264,16 @@ async def list_questions(
     if knowledge_point:
         query = query.where(filter=FieldFilter("knowledge_point", "==", knowledge_point))
     
-    if tags or statuses:
+    if tags or statuses or grades:
         # 为了支持多选，统一采用全量拉取后在内存中过滤
-        # 注意：如果 tags 很多，这里可能会拉取较多数据，但对于个人应用是可控的
         docs = query.stream(timeout=10)
         result = [doc.to_dict() for doc in docs]
         
+        # 检查数据完整性，若缺少 grade 则显式记录警告日志（无隐式 fallback）
+        for item in result:
+            if "grade" not in item:
+                logger.warning(f"[Data Integrity Warning] Question {item.get('id')} has no 'grade' field set.")
+
         if tags:
             # OR 逻辑：题目的 tags 包含任意一个选中的 tag
             result = [x for x in result if any(t in x.get("tags", []) for t in tags)]
@@ -267,6 +281,10 @@ async def list_questions(
         if statuses:
             # OR 逻辑：题目的 status 包含在选中的 statuses 中
             result = [x for x in result if x.get("status") in statuses]
+
+        if grades:
+            # OR 逻辑：题目的 grade 包含在选中的 grades 中
+            result = [x for x in result if x.get("grade") in grades]
             
         result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return {"questions": result[offset:offset+limit]}
@@ -277,6 +295,9 @@ async def list_questions(
                     .limit(limit)\
                     .stream(timeout=10)
         result = [doc.to_dict() for doc in docs]
+        for item in result:
+            if "grade" not in item:
+                logger.warning(f"[Data Integrity Warning] Question {item.get('id')} has no 'grade' field set.")
         return {"questions": result}
 
 @router.get("/tts")
@@ -590,6 +611,71 @@ async def update_question_tags(
     doc_ref.update({"tags": request.tags}, timeout=10)
     return {"message": "标签绑定成功", "tags": request.tags}
 
+class GradeUpdateRequest(BaseModel):
+    grade: int
+
+@router.post("/{question_id}/grade")
+async def update_question_grade(
+    question_id: str,
+    request: GradeUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """更新单条错题所属年级"""
+    if request.grade < 1 or request.grade > 12:
+        logger.error(f"[Security Validation Error] User '{current_user.username}' supplied invalid grade: {request.grade}")
+        raise HTTPException(status_code=400, detail="年级参数无效，必须在 1 到 12 之间")
+
+    doc_ref = db.collection("questions").document(question_id)
+    doc = doc_ref.get(timeout=10)
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="错题未找到")
+        
+    data = doc.to_dict()
+    if data["user_id"] != current_user.username:
+        logger.warning(f"[Security Warning] Unauthorized grade update attempt on question {question_id} by {current_user.username}")
+        raise HTTPException(status_code=403, detail="无权操作该错题")
+        
+    doc_ref.update({"grade": request.grade}, timeout=10)
+    logger.info(f"Question {question_id} grade updated to {request.grade} by {current_user.username}")
+    return {"message": "年级更新成功", "grade": request.grade}
+
+@router.post("/migrate-grades")
+async def migrate_grades(
+    target_grade: int = Query(1, ge=1, le=12),
+    force: bool = Query(False),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    将当前用户的历史错题年级设置为 target_grade (默认1，即一年级)。
+    force=False 时仅迁移没有设置 grade 字段的错题；
+    force=True 时强制重置当前用户所有错题。
+    """
+    query = db.collection("questions").where(filter=FieldFilter("user_id", "==", current_user.username))
+    docs = query.stream(timeout=10)
+    
+    batch = db.batch()
+    batch_count = 0
+    total_updated = 0
+    
+    for doc in docs:
+        data = doc.to_dict()
+        if force or ("grade" not in data):
+            batch.update(doc.reference, {"grade": target_grade})
+            batch_count += 1
+            total_updated += 1
+            
+            # Firestore batch 每次最多 500 次写入，达到 400 时先提交
+            if batch_count >= 400:
+                batch.commit()
+                batch = db.batch()
+                batch_count = 0
+                
+    if batch_count > 0:
+        batch.commit()
+        
+    logger.info(f"Grade migration executed by '{current_user.username}': updated {total_updated} questions to grade {target_grade}.")
+    return {"message": f"成功将 {total_updated} 道历史错题设置为 {target_grade} 年级", "updated_count": total_updated}
+
 # 批量管理
 
 class BatchRequest(BaseModel):
@@ -792,13 +878,21 @@ async def generate_paper(
         image_html = ""
         # 生成的题目不附带原图照片，保持干净文本版式
 
+        grade_val = q.get("grade")
+        if grade_val is None:
+            logger.warning(f"[Data Integrity Warning] Question {q.get('id')} has no 'grade' field in paper export.")
+            grade_badge = ""
+        else:
+            grade_map = {1: "一年级", 2: "二年级", 3: "三年级", 4: "四年级", 5: "五年级", 6: "六年级"}
+            grade_badge = f" <span style='font-size:12px; color:#666; font-weight:normal;'>({grade_map.get(grade_val, f'{grade_val}年级')})</span>"
+
         options_html = ""
         if q.get("options"):
             options_html = '<div class="options">' + "".join([f'<div>[ ] {opt}</div>' for opt in q["options"]]) + '</div>'
 
         questions_html += f"""
         <div class="question-container">
-            <div class="question-title">第 {index} 题：</div>
+            <div class="question-title">第 {index} 题{grade_badge}：</div>
             <div class="question-text">{q.get("question_text", '')}</div>
             {image_html}
             {options_html}

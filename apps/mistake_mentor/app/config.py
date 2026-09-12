@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     MISTAKE_MENTOR_FIRESTORE_DB: str = "mistake-mentor-db"
     
     # Model Names
-    ERASURE_MODEL: str = "gemini-3.1-flash-image-preview"
-    GEMINI_MODEL_NAME: str = "gemini-3.1-pro-preview"
+    ERASURE_MODEL: str = "gemini-3.1-flash-image"
+    GEMINI_MODEL_NAME: str = "gemini-3.8-flash"
     
     # Backend Security
     SECRET_KEY: str = "SUPER_SECRET_KEY_FOR_DEMO_PURPOSES"

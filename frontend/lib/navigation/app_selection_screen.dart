@@ -1,7 +1,4 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:dio/dio.dart';
 import '../main.dart'; // 引入 MainNavigationShell
 
 // 单词助手的首页
@@ -16,43 +13,6 @@ class AppSelectionScreen extends StatefulWidget {
 }
 
 class _AppSelectionScreenState extends State<AppSelectionScreen> {
-  // 定义应用的健康检查 URL
-  // 在实际生产中，这些应该从配置文件或环境变量中读取
-  final Map<String, String> _healthUrls = {
-    'mistake_mentor': kDebugMode ? 'http://127.0.0.1:8000/health' : 'https://mistake-mentor-backend-url/health',
-    'word_buddy': kDebugMode ? 'http://127.0.0.1:8001/health' : 'https://word-buddy-backend-url/health',
-  };
-
-  Future<void> _checkHealthAndNavigate(String appName, Widget targetScreen) async {
-    final healthUrl = _healthUrls[appName];
-    if (healthUrl == null) return;
-
-    // 显示等待页面
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return _ColdStartWaitingDialog(
-          appName: appName,
-          healthUrl: healthUrl,
-          onSuccess: () {
-            Navigator.pop(context); // 关闭对话框
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => targetScreen),
-            );
-          },
-          onTimeout: () {
-            Navigator.pop(context); // 关闭对话框
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('服务启动超时，请稍后重试')),
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -80,9 +40,9 @@ class _AppSelectionScreenState extends State<AppSelectionScreen> {
                     icon: Icons.book,
                     color: Colors.orangeAccent,
                     onTap: () {
-                      _checkHealthAndNavigate(
-                        'mistake_mentor',
-                        const MainNavigationShell(),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const MainNavigationShell()),
                       );
                     },
                   ),
@@ -92,9 +52,9 @@ class _AppSelectionScreenState extends State<AppSelectionScreen> {
                     icon: Icons.spellcheck,
                     color: Colors.tealAccent,
                     onTap: () {
-                      _checkHealthAndNavigate(
-                        'word_buddy',
-                        const ProviderScope(child: MainLayout()),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ProviderScope(child: MainLayout())),
                       );
                     },
                   ),
@@ -152,89 +112,3 @@ class _AppSelectionScreenState extends State<AppSelectionScreen> {
   }
 }
 
-class _ColdStartWaitingDialog extends StatefulWidget {
-  final String appName;
-  final String healthUrl;
-  final VoidCallback onSuccess;
-  final VoidCallback onTimeout;
-
-  const _ColdStartWaitingDialog({
-    Key? key,
-    required this.appName,
-    required this.healthUrl,
-    required this.onSuccess,
-    required this.onTimeout,
-  }) : super(key: key);
-
-  @override
-  State<_ColdStartWaitingDialog> createState() => _ColdStartWaitingDialogState();
-}
-
-class _ColdStartWaitingDialogState extends State<_ColdStartWaitingDialog> {
-  Timer? _timer;
-  int _secondsElapsed = 0;
-  final int _timeoutSeconds = 30;
-  final Dio _dio = Dio();
-  bool _isChecking = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _startPolling();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _startPolling() {
-    _timer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      setState(() {
-        _secondsElapsed += 2;
-      });
-
-      if (_secondsElapsed >= _timeoutSeconds) {
-        timer.cancel();
-        widget.onTimeout();
-        return;
-      }
-
-      if (_isChecking) return;
-
-      _isChecking = true;
-      try {
-        final response = await _dio.get(widget.healthUrl);
-        if (response.statusCode == 200) {
-          timer.cancel();
-          widget.onSuccess();
-        }
-      } catch (e) {
-        // 忽略错误，继续轮询
-        if (kDebugMode) {
-          print('Health check failed, retrying... $e');
-        }
-      } finally {
-        _isChecking = false;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('正在唤醒服务'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 20),
-          Text('正在努力加载 [${widget.appName}]，请稍候...'),
-          const SizedBox(height: 10),
-          Text('已等待: $_secondsElapsed 秒 (超时时间: $_timeoutSeconds 秒)'),
-        ],
-      ),
-    );
-  }
-}

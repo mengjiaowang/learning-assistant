@@ -93,6 +93,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final List<String> _allStatuses = ["待复习", "完全掌握", "仍然模糊", "未掌握"];
   final Set<String> _selectedStatuses = {};
 
+  // 年级过滤状态
+  final List<int> _allGrades = [1, 2, 3, 4, 5, 6];
+  final Set<int> _selectedGrades = {2}; // 默认只看二年级的题目
 
   // 试卷导出与多选状态
   bool _isSelectionMode = false;
@@ -111,6 +114,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadData();
     _scrollController.addListener(_scrollListener);
     widget.refreshNotifier?.addListener(_loadData); // 添加流监听
+  }
+
+  String _formatGrade(int? grade) {
+    switch (grade) {
+      case 1: return '一年级';
+      case 2: return '二年级';
+      case 3: return '三年级';
+      case 4: return '四年级';
+      case 5: return '五年级';
+      case 6: return '六年级';
+      case null: return '未设年级';
+      default: return '$grade年级';
+    }
+  }
+
+  Color _getGradeColor(int? grade) {
+    switch (grade) {
+      case 1: return Colors.indigo;
+      case 2: return Colors.deepPurple;
+      case 3: return Colors.teal;
+      case 4: return Colors.amber.shade800;
+      case 5: return Colors.blueGrey;
+      case 6: return Colors.brown;
+      default: return Colors.grey;
+    }
+  }
+
+  int? _mapGradeFromChinese(String chinese) {
+    switch (chinese) {
+      case '一年级': return 1;
+      case '二年级': return 2;
+      case '三年级': return 3;
+      case '四年级': return 4;
+      case '五年级': return 5;
+      case '六年级': return 6;
+      default: return null;
+    }
   }
 
   String _mapEnglishStatusToChinese(String english) {
@@ -178,9 +218,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       
       final fetchTags = _selectedTags.isEmpty ? null : _selectedTags.toList();
       final fetchStatuses = _selectedStatuses.isEmpty ? null : _selectedStatuses.map((s) => _mapChineseStatusToEnglish(s)!).toList();
+      final fetchGrades = _selectedGrades.isEmpty ? null : _selectedGrades.toList();
       List<QuestionModel> data = await apiService.fetchQuestions(
         tags: fetchTags,
         statuses: fetchStatuses,
+        grades: fetchGrades,
         limit: _limit,
         offset: _currentOffset,
       );
@@ -260,6 +302,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  void _confirmMigrateGrades() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('同步历史题目年级'),
+        content: const Text('此操作会将所有未设置年级的历史错题统一标记为 “一年级”。是否继续？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确定同步')),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final res = await apiService.migrateGrades(targetGrade: 1);
+      if (mounted) {
+        if (res != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(res['message'] ?? '年级同步完成')),
+          );
+          _loadData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('年级同步失败，请检查网络或配置')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -294,6 +366,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: const Text('取消选择', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           if (!_isSelectionMode) ...[
+            PopupMenuButton<String>(
+              tooltip: '更多功能',
+              onSelected: (val) {
+                if (val == 'migrate_grade_1') {
+                  _confirmMigrateGrades();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'migrate_grade_1',
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_stories, size: 18, color: Colors.indigo),
+                      SizedBox(width: 8),
+                      Text('将历史错题标记为一年级'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: '回收站',
@@ -463,6 +555,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         spacing: 4,
                         runSpacing: 4,
                         children: [
+                          // 年级标签
+                          () {
+                            final gradeChinese = _formatGrade(item.grade);
+                            final gradeColor = _getGradeColor(item.grade);
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: gradeColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: gradeColor.withOpacity(0.5), width: 0.5),
+                              ),
+                              child: Text(
+                                gradeChinese,
+                                style: TextStyle(fontSize: 10, color: gradeColor, fontWeight: FontWeight.bold),
+                              ),
+                            );
+                          }(),
                           // 状态标签
                           () {
                             final statusChinese = _mapEnglishStatusToChinese(item.status);
@@ -653,6 +762,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         const SizedBox(height: 12),
                       ],
+                      const Divider(height: 20),
+
+                      // 年级展示与修改
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('🎒 所属年级：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).primaryColor)),
+                          TextButton.icon(
+                            onPressed: () => _showGradeSelectionDialog(context, item, setModalState),
+                            icon: const Icon(Icons.edit, size: 14),
+                            label: const Text('修改年级', style: TextStyle(fontSize: 12)),
+                            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getGradeColor(item.grade).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _getGradeColor(item.grade).withOpacity(0.5)),
+                        ),
+                        child: Text(
+                          _formatGrade(item.grade),
+                          style: TextStyle(color: _getGradeColor(item.grade), fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                       const Divider(height: 20),
                       
                       Text('🏷️ 所属科目/标签：', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).primaryColor)),
@@ -918,6 +1055,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.only(top: 4, bottom: 4, right: 8),
       child: Row(
         children: [
+          // 年级下拉按钮
+          _buildMultiSelectDropdown(
+            label: '年级',
+            options: _allGrades.map((g) => _formatGrade(g)).toList(),
+            selectedValues: _selectedGrades.map((g) => _formatGrade(g)).toSet(),
+            onChanged: (values) {
+              setState(() {
+                _selectedGrades.clear();
+                for (var val in values) {
+                  final g = _mapGradeFromChinese(val);
+                  if (g != null) _selectedGrades.add(g);
+                }
+                _loadData();
+              });
+            },
+          ),
+          const SizedBox(width: 8),
           // 科目下拉按钮
           _buildMultiSelectDropdown(
             label: '科目',
@@ -987,7 +1141,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required ValueChanged<Set<String>> onChanged,
   }) {
     final bool hasSelection = selectedValues.isNotEmpty;
-    final String displayLabel = hasSelection ? '$label (${selectedValues.length})' : label;
+    final String displayLabel = hasSelection
+        ? (selectedValues.length == 1 ? selectedValues.first : '$label (${selectedValues.length})')
+        : label;
     
     return PopupMenuButton<String>(
       child: Chip(
@@ -1174,5 +1330,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
          ],
        )
      );
+  }
+
+  void _showGradeSelectionDialog(BuildContext context, QuestionModel item, StateSetter setModalState) {
+    int selected = item.grade ?? 2;
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('修改所属年级'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [1, 2, 3, 4, 5, 6].map((g) {
+                  return RadioListTile<int>(
+                    title: Text(_formatGrade(g)),
+                    value: g,
+                    groupValue: selected,
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selected = val);
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                TextButton(
+                  onPressed: () async {
+                    final ok = await apiService.updateQuestionGrade(item.id, selected);
+                    if (ok) {
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (context.mounted) Navigator.pop(context); // 关闭详情底栏
+                      _loadData();
+                    } else {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('修改年级失败，请重试')));
+                      }
+                    }
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 }

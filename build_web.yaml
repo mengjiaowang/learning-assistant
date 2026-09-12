@@ -1,0 +1,18 @@
+steps:
+  - name: 'ghcr.io/cirruslabs/flutter:stable'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        cd frontend
+        flutter config --enable-web
+        flutter pub get
+        flutter build web --release --no-wasm-dry-run
+        tar -czf /workspace/web.tar.gz -C build/web .
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gsutil'
+    args:
+      - 'cp'
+      - '/workspace/web.tar.gz'
+      - 'gs://learning-assistant-490905_cloudbuild/web.tar.gz'

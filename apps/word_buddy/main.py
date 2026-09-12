@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from google.cloud import firestore
 from datetime import datetime, timedelta, timezone
 import random
+from typing import Optional
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
@@ -30,8 +31,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 class User(BaseModel):
     username: str
-    full_name: str | None = None
-    disabled: bool | None = None
+    full_name: Optional[str] = None
+    disabled: Optional[bool] = None
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -63,6 +64,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/api/health", tags=["System"])
 @app.get("/health", tags=["System"])
 async def health_check():
     """Cloud Run 健康检查端点"""

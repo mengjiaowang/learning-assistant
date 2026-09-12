@@ -86,6 +86,7 @@ class ApiService {
     String? knowledgePoint, 
     List<String>? tags, 
     List<String>? statuses,
+    List<int>? grades,
     bool isDeleted = false,
     int? limit,
     int? offset,
@@ -95,6 +96,7 @@ class ApiService {
         if (knowledgePoint != null) 'knowledge_point': knowledgePoint,
         if (tags != null && tags.isNotEmpty) 'tags': tags,
         if (statuses != null && statuses.isNotEmpty) 'statuses': statuses,
+        if (grades != null && grades.isNotEmpty) 'grades': grades,
         'is_deleted': isDeleted,
         if (limit != null) 'limit': limit,
         if (offset != null) 'offset': offset,
@@ -113,6 +115,7 @@ class ApiService {
   }
 
   Future<bool> uploadQuestion(Uint8List imageBytes, String fileName, {
+    int grade = 2, // 默认新增题目为二年级
     bool mirror = false, 
     int rotateDegrees = 0,
     double cropLeft = 0.0,
@@ -126,6 +129,7 @@ class ApiService {
           imageBytes, 
           filename: fileName
         ),
+        'grade': grade.toString(),
         'mirror': mirror.toString(),
         'rotate_degrees': rotateDegrees.toString(),
         'crop_left': cropLeft.toString(),
@@ -181,6 +185,38 @@ class ApiService {
       return null;
     } catch (e) {
       print('Regenerate erasure error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> updateQuestionGrade(String questionId, int grade) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/questions/$questionId/grade',
+        data: {'grade': grade},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Update grade error: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> migrateGrades({int targetGrade = 1, bool force = false}) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/questions/migrate-grades',
+        queryParameters: {
+          'target_grade': targetGrade,
+          'force': force,
+        },
+      );
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+      return null;
+    } catch (e) {
+      print('Migrate grades error: $e');
       return null;
     }
   }
@@ -290,11 +326,14 @@ class ApiService {
   // 4. 复习与统计服务 (Review & Statistics)
   // ==========================================
 
-  Future<List<QuestionModel>> fetchReviewBatch({List<String>? subjects, int limit = 15}) async {
+  Future<List<QuestionModel>> fetchReviewBatch({List<String>? subjects, List<int>? grades, int limit = 15}) async {
     try {
       String url = '/api/v1/reviews/batch?limit=$limit';
       if (subjects != null && subjects.isNotEmpty) {
         url += subjects.map((s) => '&subjects=${Uri.encodeComponent(s)}').join();
+      }
+      if (grades != null && grades.isNotEmpty) {
+        url += grades.map((g) => '&grades=$g').join();
       }
       final response = await _dio.get(url);
       if (response.statusCode == 200) {
@@ -308,11 +347,14 @@ class ApiService {
     }
   }
 
-  Future<List<QuestionModel>> fetchFreeBatch(List<String> subjects, {int limit = 50}) async {
+  Future<List<QuestionModel>> fetchFreeBatch(List<String> subjects, {List<int>? grades, int limit = 50}) async {
     try {
       String url = '/api/v1/reviews/free?limit=$limit';
       if (subjects.isNotEmpty) {
         url += subjects.map((s) => '&subjects=${Uri.encodeComponent(s)}').join();
+      }
+      if (grades != null && grades.isNotEmpty) {
+        url += grades.map((g) => '&grades=$g').join();
       }
       final response = await _dio.get(url);
       if (response.statusCode == 200) {
@@ -342,11 +384,12 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchStatistics({String? startDate, String? endDate}) async {
+  Future<Map<String, dynamic>> fetchStatistics({String? startDate, String? endDate, List<int>? grades}) async {
     try {
       final queryParams = <String, dynamic>{};
       if (startDate != null) queryParams['start_date'] = startDate;
       if (endDate != null) queryParams['end_date'] = endDate;
+      if (grades != null && grades.isNotEmpty) queryParams['grades'] = grades;
 
       final response = await _dio.get('/api/v1/reviews/statistics', queryParameters: queryParams);
       if (response.statusCode == 200) {

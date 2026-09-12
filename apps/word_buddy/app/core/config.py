@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-FIRESTORE_DATABASE_ID = os.getenv("FIRESTORE_DATABASE_ID")
-GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "learning-assistant-490905")
+FIRESTORE_DATABASE_ID = os.getenv("FIRESTORE_DATABASE_ID", "word-buddy-db")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-3.8-flash")
 GEMINI_ENDPOINT = os.getenv("GEMINI_ENDPOINT")
-GEMINI_LOCATION = os.getenv("GEMINI_LOCATION")
+GEMINI_LOCATION = os.getenv("GEMINI_LOCATION", "global")

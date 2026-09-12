@@ -10,6 +10,9 @@ from app.config import settings
 @pytest.mark.asyncio
 async def test_query_with_order_by():
     """验证 Firestore 查询是否需要复合索引"""
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if not os.path.exists(cred_path):
+        pytest.skip("GOOGLE_APPLICATION_CREDENTIALS not configured or file does not exist")
     try:
         db = firestore.AsyncClient(project=settings.PROJECT_ID, database=settings.MISTAKE_MENTOR_FIRESTORE_DB)
         query = db.collection("questions")\

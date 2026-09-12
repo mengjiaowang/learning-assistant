@@ -32,6 +32,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
   int _cameraIndex = 0;
   bool _isMirrored = false;
   int _rotationTurns = 0;
+  int _selectedGrade = 2; // 新增题目默认为二年级
   
   // 裁剪相关状态
   bool _isCropping = false;
@@ -160,6 +161,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       final success = await apiService.uploadQuestion(
         _capturedImageBytes!, 
         _capturedImageName ?? "original.jpg",
+        grade: _selectedGrade,
         mirror: _isMirrored,
         rotateDegrees: _rotationTurns * 90,
         cropLeft: _isCropping ? (imgLeft / imgW).clamp(0.0, 1.0) : 0.0,
@@ -196,6 +198,45 @@ class _CaptureScreenState extends State<CaptureScreen> {
       appBar: AppBar(
         title: const Text('拍照录入错题'),
         actions: [
+          // 年级选择器
+          PopupMenuButton<int>(
+            initialValue: _selectedGrade,
+            tooltip: '选择录入年级',
+            onSelected: (int grade) {
+              setState(() {
+                _selectedGrade = grade;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 10.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white70),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _selectedGrade == 2 ? '二年级' : (_selectedGrade == 1 ? '一年级' : '$_selectedGrade年级'),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const Icon(Icons.arrow_drop_down, color: Colors.white, size: 18),
+                  ],
+                ),
+              ),
+            ),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 2, child: Text('二年级 (默认)')),
+              const PopupMenuItem(value: 1, child: Text('一年级')),
+              const PopupMenuItem(value: 3, child: Text('三年级')),
+              const PopupMenuItem(value: 4, child: Text('四年级')),
+              const PopupMenuItem(value: 5, child: Text('五年级')),
+              const PopupMenuItem(value: 6, child: Text('六年级')),
+            ],
+          ),
           if (_capturedImageBytes != null)
              IconButton(
                icon: Icon(Icons.crop, color: _isCropping ? Colors.orange : Colors.white),

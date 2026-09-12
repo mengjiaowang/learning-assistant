@@ -52,7 +52,7 @@ class GCPQuestionsAIService:
                  img.save(img_byte_arr, format='JPEG')
                  return img_byte_arr.getvalue()
         
-        raise RuntimeError("gemini-3.1-flash-image-preview 未返回有效的圖片數據內容。")
+        raise RuntimeError(f"{settings.ERASURE_MODEL} 未返回有效的图片数据内容。")
 
     def remove_handwriting(self, image_bytes: bytes) -> bytes:
         """公有接口：對外提供安全的降級防護，若 3 次重試後仍失敗則回退原圖。"""
